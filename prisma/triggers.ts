@@ -15,8 +15,8 @@ async function main() {
     returns trigger as $$
     begin
         begin
-            insert into public."profile" (id)
-            values (new.id);
+            insert into public."profile" (id,username)
+            values (new.id, new.raw_user_meta_data ->> 'username');
         exception when others then
             raise log '❌ handle_new_user failed for user %, error: %', new.id, SQLERRM;
         end;
