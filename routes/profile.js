@@ -8,7 +8,9 @@ const authenticateJWT = require('./auth');
 router.get('/', authenticateJWT, async (req, res) => {
   try {
     const profiles = await profilesController.getAllProfiles();
-    res.json(profiles);
+    // Mapear para devolver solo los campos requeridos
+    const result = profiles.map(({ id, username, role }) => ({ id, username, role }));
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -19,7 +21,9 @@ router.get('/:id', authenticateJWT, async (req, res) => {
   try {
     const profile = await profilesController.getProfileById(req.params.id);
     if (!profile) return res.status(404).json({ error: 'Profile not found' });
-    res.json(profile);
+    // Devolver solo los campos requeridos
+    const { id, username, role } = profile;
+    res.json({ id, username, role });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -31,7 +35,9 @@ router.patch('/:id/username', authenticateJWT, async (req, res) => {
     const { username } = req.body;
     if (!username) return res.status(400).json({ error: 'Username is required' });
     const updated = await profilesController.updateProfileUsername(req.params.id, username);
-    res.json(updated);
+    // Devolver solo los campos requeridos
+    const { id, username: uname, role } = updated;
+    res.json({ id, username: uname, role });
   } catch (err) {
     if (err.code === 'P2002') {
       res.status(409).json({ error: 'Profile with this username already exists' });
@@ -49,7 +55,9 @@ router.patch('/:id/role', authenticateJWT, async (req, res) => {
     const { role } = req.body;
     if (!role) return res.status(400).json({ error: 'Role is required' });
     const updated = await profilesController.updateProfileRole(req.params.id, role);
-    res.json(updated);
+    // Devolver solo los campos requeridos
+    const { id, username, role: newRole } = updated;
+    res.json({ id, username, role: newRole });
   } catch (err) {
     if (err.code === 'P2025') {
       res.status(404).json({ error: 'Profile not found' });
@@ -77,10 +85,11 @@ router.post('/', authenticateJWT, async (req, res) => {
   try {
     const { id, username, preferences, dietaryRestrictions } = req.body;
     const profile = await profilesController.createProfile({ id, username, preferences, dietaryRestrictions });
-    res.status(201).json(profile);
+    // Devolver solo los campos requeridos
+    const { id: pid, username: uname, role } = profile;
+    res.status(201).json({ id: pid, username: uname, role });
   } catch (err) {
     if (err.code === 'P2002') {
-      // Prisma unique constraint failed
       res.status(409).json({ error: 'Profile with this username already exists' });
     } else {
       res.status(500).json({ error: err.message });
