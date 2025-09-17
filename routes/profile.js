@@ -67,6 +67,38 @@ router.patch('/:id/role', authenticateJWT, async (req, res) => {
   }
 });
 
+// PATCH /profile/:id - update profile (protegido)
+router.patch('/:id', authenticateJWT, async (req, res) => {
+  try {
+    const { username } = req.body;
+    
+    // Validate input
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    
+    // Trim whitespace
+    const trimmedUsername = username.trim();
+    if (!trimmedUsername) {
+      return res.status(400).json({ error: 'Username cannot be empty' });
+    }
+    
+    const updated = await profilesController.updateProfileUsername(req.params.id, trimmedUsername);
+    
+    // Devolver solo los campos requeridos
+    const { id, username: uname, role } = updated;
+    res.json({ id, username: uname, role });
+  } catch (err) {
+    if (err.code === 'P2002') {
+      res.status(409).json({ error: 'Profile with this username already exists' });
+    } else if (err.code === 'P2025') {
+      res.status(404).json({ error: 'Profile not found' });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
 module.exports = router;
 
 // DELETE /profile/:id - delete a profile by id (protegido)
