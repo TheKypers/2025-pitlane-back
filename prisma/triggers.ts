@@ -56,6 +56,38 @@ async function main() {
     execute procedure public.handle_user_delete();
   `;
 
+  // Function: handle profile username update → update raw_user_meta_data
+  await sql`
+    create or replace function public.handle_username_update()
+    returns trigger as $$
+    begin
+        begin
+            -- Only update if username actually changed
+            if old.username is distinct from new.username then
+                update auth.users 
+                set raw_user_meta_data = jsonb_set(
+                    coalesce(raw_user_meta_data, '{}'::jsonb),
+                    '{username}',
+                    to_jsonb(new.username)
+                )
+                where id = new.id;
+            end if;
+        exception when others then
+            raise log 'handle_username_update failed for profile %, error: %', new.id, SQLERRM;
+        end;
+        return new;
+    end;
+    $$ language plpgsql security definer;
+  `;
+
+  // Trigger: after update on Profile
+  await sql`
+    create or replace trigger on_profile_username_updated
+    after update on public."profile"
+    for each row
+    execute procedure public.handle_username_update();
+  `;
+
   console.log("✅ Finished creating functions and triggers.");
   process.exit();
 }
