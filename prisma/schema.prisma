@@ -14,8 +14,45 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model User {
-  id    Int    @id @default(autoincrement())
-  name  String
-  email String @unique
+enum Role {
+  admin
+  user
+}
+
+model Profile {
+  id                 String               @id @db.Uuid
+  role               Role                 @default(user)
+  username           String?              @unique
+  Preference         Preference[]         @relation("profile_preference")
+  DietaryRestriction DietaryRestriction[] @relation("profile_dietaryrestriction")
+
+  @@map("profile")
+}
+
+model Preference {
+  PreferenceID Int       @id @default(autoincrement())
+  name         String    @unique
+  users        Profile[] @relation("profile_preference")
+  foods        Food[]    @relation("preference_food")
+
+  @@map("preference")
+}
+
+model Food {
+  FoodID              Int                  @id @default(autoincrement())
+  name                String               @unique
+  svgLink             String // link to the SVG file
+  dietaryRestrictions DietaryRestriction[] @relation("food_dietaryrestriction")
+  preferences         Preference[]         @relation("preference_food")
+
+  @@map("food")
+}
+
+model DietaryRestriction {
+  DietaryRestrictionID Int       @id @default(autoincrement())
+  name                 String    @unique
+  foods                Food[]    @relation("food_dietaryrestriction")
+  users                Profile[] @relation("profile_dietaryrestriction")
+
+  @@map("dietaryrestriction")
 }
