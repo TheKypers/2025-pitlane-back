@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 const profilesController = require('../controllers/profilesLib');
 const authenticateJWT = require('./auth');
@@ -24,6 +26,18 @@ router.get('/:id', authenticateJWT, async (req, res) => {
     // Devolver solo los campos requeridos
     const { id, username, role } = profile;
     res.json({ id, username, role });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /profile/:id/full - get profile by id with preferences and dietary restrictions (protegido)
+router.get('/:id/full', authenticateJWT, async (req, res) => {
+  try {
+    const profile = await profilesController.getProfileById(req.params.id);
+    if (!profile) return res.status(404).json({ error: 'Profile not found' });
+    // Devolver todos los campos incluyendo relaciones
+    res.json(profile);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -58,9 +72,207 @@ router.patch('/:id/role', authenticateJWT, async (req, res) => {
     // Devolver solo los campos requeridos
     const { id, username, role: newRole } = updated;
     res.json({ id, username, role: newRole });
+
   } catch (err) {
     if (err.code === 'P2025') {
       res.status(404).json({ error: 'Profile not found' });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+// PATCH /profile/:id - update profile (protegido)
+router.patch('/:id', authenticateJWT, async (req, res) => {
+  try {
+    const { username } = req.body;
+    
+    // Validate input
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    
+    // Trim whitespace
+    const trimmedUsername = username.trim();
+    if (!trimmedUsername) {
+      return res.status(400).json({ error: 'Username cannot be empty' });
+    }
+    
+    const updated = await profilesController.updateProfileUsername(req.params.id, trimmedUsername);
+    
+    // Devolver solo los campos requeridos
+    const { id, username: uname, role } = updated;
+    res.json({ id, username: uname, role });
+  } catch (err) {
+    if (err.code === 'P2002') {
+      res.status(409).json({ error: 'Profile with this username already exists' });
+    } else if (err.code === 'P2025') {
+      res.status(404).json({ error: 'Profile not found' });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+// POST /profile/:id/preferences - add preferences to a profile (protegido)
+router.post('/:id/preferences', authenticateJWT, async (req, res) => {
+  try {
+    const { preferences } = req.body;
+    if (!preferences || !Array.isArray(preferences) || preferences.length === 0) {
+      return res.status(400).json({ error: 'Preferences array is required' });
+    }
+    
+    const updated = await profilesController.addPreferencesToProfile(req.params.id, preferences);
+    const { id, username, role } = updated;
+    res.json({ id, username, role });
+  } catch (err) {
+    if (err.code === 'P2025') {
+      res.status(404).json({ error: 'Profile not found' });
+    } else if (err.code === 'P2002') {
+      res.status(409).json({ error: 'One or more preferences do not exist' });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+// DELETE /profile/:id/preferences - remove preferences from a profile (protegido)
+router.delete('/:id/preferences', authenticateJWT, async (req, res) => {
+  try {
+    const { preferences } = req.body;
+    if (!preferences || !Array.isArray(preferences) || preferences.length === 0) {
+      return res.status(400).json({ error: 'Preferences array is required' });
+    }
+    
+    const updated = await profilesController.removePreferencesFromProfile(req.params.id, preferences);
+    const { id, username, role } = updated;
+    res.json({ id, username, role });
+  } catch (err) {
+    if (err.code === 'P2025') {
+      res.status(404).json({ error: 'Profile not found' });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+// PUT /profile/:id/preferences - set all preferences for a profile (protegido)
+router.put('/:id/preferences', authenticateJWT, async (req, res) => {
+  try {
+    const { preferences } = req.body;
+    if (!preferences || !Array.isArray(preferences)) {
+      return res.status(400).json({ error: 'Preferences array is required' });
+    }
+    
+    const updated = await profilesController.setProfilePreferences(req.params.id, preferences);
+    const { id, username, role } = updated;
+    res.json({ id, username, role });
+  } catch (err) {
+    if (err.code === 'P2025') {
+      res.status(404).json({ error: 'Profile not found' });
+    } else if (err.code === 'P2002') {
+      res.status(409).json({ error: 'One or more preferences do not exist' });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+// POST /profile/:id/dietary-restrictions - add dietary restrictions to a profile (protegido)
+router.post('/:id/dietary-restrictions', authenticateJWT, async (req, res) => {
+  try {
+    const { dietaryRestrictions } = req.body;
+    if (!dietaryRestrictions || !Array.isArray(dietaryRestrictions) || dietaryRestrictions.length === 0) {
+      return res.status(400).json({ error: 'Dietary restrictions array is required' });
+    }
+    
+    const updated = await profilesController.addDietaryRestrictionsToProfile(req.params.id, dietaryRestrictions);
+    const { id, username, role } = updated;
+    res.json({ id, username, role });
+  } catch (err) {
+    if (err.code === 'P2025') {
+      res.status(404).json({ error: 'Profile not found' });
+    } else if (err.code === 'P2002') {
+      res.status(409).json({ error: 'One or more dietary restrictions do not exist' });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+// DELETE /profile/:id/dietary-restrictions - remove dietary restrictions from a profile (protegido)
+router.delete('/:id/dietary-restrictions', authenticateJWT, async (req, res) => {
+  try {
+    const { dietaryRestrictions } = req.body;
+    if (!dietaryRestrictions || !Array.isArray(dietaryRestrictions) || dietaryRestrictions.length === 0) {
+      return res.status(400).json({ error: 'Dietary restrictions array is required' });
+    }
+    
+    const updated = await profilesController.removeDietaryRestrictionsFromProfile(req.params.id, dietaryRestrictions);
+    const { id, username, role } = updated;
+    res.json({ id, username, role });
+  } catch (err) {
+    if (err.code === 'P2025') {
+      res.status(404).json({ error: 'Profile not found' });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+// PUT /profile/:id/dietary-restrictions - set all dietary restrictions for a profile (protegido)
+router.put('/:id/dietary-restrictions', authenticateJWT, async (req, res) => {
+  try {
+    const { dietaryRestrictions } = req.body;
+    if (!dietaryRestrictions || !Array.isArray(dietaryRestrictions)) {
+      return res.status(400).json({ error: 'Dietary restrictions array is required' });
+    }
+    
+    const updated = await profilesController.setProfileDietaryRestrictions(req.params.id, dietaryRestrictions);
+    const { id, username, role } = updated;
+    res.json({ id, username, role });
+  } catch (err) {
+    if (err.code === 'P2025') {
+      res.status(404).json({ error: 'Profile not found' });
+    } else if (err.code === 'P2002') {
+      res.status(409).json({ error: 'One or more dietary restrictions do not exist' });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+// PUT /profile/:id/preferences-and-restrictions - set both preferences and dietary restrictions for a profile (protegido)
+router.put('/:id/preferences-and-restrictions', authenticateJWT, async (req, res) => {
+  try {
+    const { preferences = [], dietaryRestrictions = [] } = req.body;
+    
+    if (!Array.isArray(preferences) || !Array.isArray(dietaryRestrictions)) {
+      return res.status(400).json({ error: 'Preferences and dietaryRestrictions must be arrays' });
+    }
+    
+    // Update both preferences and dietary restrictions in a single transaction
+    const updated = await prisma.profile.update({
+      where: { id: req.params.id },
+      data: {
+        Preference: {
+          set: preferences.map(PreferenceID => ({ PreferenceID }))
+        },
+        DietaryRestriction: {
+          set: dietaryRestrictions.map(DietaryRestrictionID => ({ DietaryRestrictionID }))
+        }
+      },
+      include: { Preference: true, DietaryRestriction: true }
+    });
+    
+    const { id, username, role } = updated;
+    res.json({ id, username, role });
+
+  } catch (err) {
+    if (err.code === 'P2025') {
+      res.status(404).json({ error: 'Profile not found' });
+    } else if (err.code === 'P2002') {
+      res.status(409).json({ error: 'One or more preferences or dietary restrictions do not exist' });
     } else {
       res.status(500).json({ error: err.message });
     }
