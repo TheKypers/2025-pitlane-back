@@ -77,7 +77,8 @@ module.exports = {
     getFoodsByPreferenceAndRestriction,
     getRecommendedFoodsForProfile,
     createFood,
-    deleteFood
+    deleteFood,
+    updateFood
 };
 
 // Delete a food by id
@@ -99,6 +100,25 @@ async function createFood({ name, svgLink, preferences = [], dietaryRestrictions
             svgLink,
             preferences: preferences.length ? { connect: preferences.map(id => ({ PreferenceID: id })) } : undefined,
             dietaryRestrictions: dietaryRestrictions.length ? { connect: dietaryRestrictions.map(id => ({ DietaryRestrictionID: id })) } : undefined
+        },
+        include: { dietaryRestrictions: true, preferences: true }
+    });
+}
+
+// Update a food by id
+async function updateFood(id, { name, svgLink, preferences = [], dietaryRestrictions = [] }) {
+    const foodId = parseInt(id);
+    if (isNaN(foodId)) {
+        throw new Error(`Invalid FoodID: ${id}`);
+    }
+
+    return prisma.food.update({
+        where: { FoodID: foodId },
+        data: {
+            name,
+            svgLink,
+            preferences: { set: preferences.map(pid => ({ PreferenceID: pid })) },
+            dietaryRestrictions: { set: dietaryRestrictions.map(rid => ({ DietaryRestrictionID: rid })) }
         },
         include: { dietaryRestrictions: true, preferences: true }
     });
