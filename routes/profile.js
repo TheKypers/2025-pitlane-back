@@ -72,6 +72,7 @@ router.patch('/:id/role', authenticateJWT, async (req, res) => {
     // Devolver solo los campos requeridos
     const { id, username, role: newRole } = updated;
     res.json({ id, username, role: newRole });
+
   } catch (err) {
     if (err.code === 'P2025') {
       res.status(404).json({ error: 'Profile not found' });
@@ -266,6 +267,7 @@ router.put('/:id/preferences-and-restrictions', authenticateJWT, async (req, res
     
     const { id, username, role } = updated;
     res.json({ id, username, role });
+
   } catch (err) {
     if (err.code === 'P2025') {
       res.status(404).json({ error: 'Profile not found' });
