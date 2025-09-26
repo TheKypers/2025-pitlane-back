@@ -3,6 +3,11 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET;
 
 function authenticateJWT(req, res, next) {
+    // Skip authentication for OPTIONS requests (preflight)
+    if (req.method === 'OPTIONS') {
+        return next();
+    }
+    
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
         const token = authHeader.split(' ')[1];
