@@ -171,7 +171,12 @@ async function deleteFood(id) {
 }
 
 // Create a new food
-async function createFood({ name, svgLink, preferences = [], dietaryRestrictions = [], hasNoRestrictions = false }) {
+async function createFood({ name, svgLink, kCal = 0, preferences = [], dietaryRestrictions = [], hasNoRestrictions = false }) {
+    // Validate kCal is not negative
+    if (kCal < 0) {
+        throw new Error('kCal cannot be less than 0');
+    }
+    
     // If hasNoRestrictions is true, set dietaryRestrictions to [0] (For Everyone)
     const finalRestrictions = hasNoRestrictions ? [0] : dietaryRestrictions;
     
@@ -179,6 +184,7 @@ async function createFood({ name, svgLink, preferences = [], dietaryRestrictions
         data: {
             name,
             svgLink,
+            kCal,
             preferences: preferences.length ? { connect: preferences.map(id => ({ PreferenceID: id })) } : undefined,
             dietaryRestrictions: finalRestrictions.length ? { connect: finalRestrictions.map(id => ({ DietaryRestrictionID: id })) } : undefined
         },
@@ -187,10 +193,15 @@ async function createFood({ name, svgLink, preferences = [], dietaryRestrictions
 }
 
 // Update a food by id
-async function updateFood(id, { name, svgLink, preferences = [], dietaryRestrictions = [] }) {
+async function updateFood(id, { name, svgLink, kCal, preferences = [], dietaryRestrictions = [] }) {
     const foodId = parseInt(id);
     if (isNaN(foodId)) {
         throw new Error(`Invalid FoodID: ${id}`);
+    }
+    
+    // Validate kCal is not negative if provided
+    if (kCal !== undefined && kCal < 0) {
+        throw new Error('kCal cannot be less than 0');
     }
 
     return prisma.food.update({
@@ -198,6 +209,7 @@ async function updateFood(id, { name, svgLink, preferences = [], dietaryRestrict
         data: {
             name,
             svgLink,
+            ...(kCal !== undefined && { kCal }),
             preferences: { set: preferences.map(pid => ({ PreferenceID: pid })) },
             dietaryRestrictions: { set: dietaryRestrictions.map(rid => ({ DietaryRestrictionID: rid })) }
         },

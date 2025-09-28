@@ -36,6 +36,7 @@ model Food {
   FoodID              Int                  @id @default(autoincrement())
   name                String               @unique
   svgLink             String // link to the SVG file
+  kCal                Int                  @default(0) @db.Integer
   dietaryRestrictions DietaryRestriction[] @relation("food_dietaryrestriction")
   preferences         Preference[]         @relation("preference_food")
   meals               Meal[]               @relation("meal_food")
