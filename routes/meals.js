@@ -2,6 +2,38 @@ const express = require('express');
 const router = express.Router();
 const mealsLib = require('../controllers/mealsLib');
 
+// GET /meals/all - Get all meals from all users with profile information
+router.get('/all', async (req, res) => {
+    try {
+        const meals = await mealsLib.getAllMealsWithProfiles();
+        res.json(meals);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /meals/user - Get all meals created by a specific user (using profileId from query)
+router.get('/user', async (req, res) => {
+    try {
+        const { profileId } = req.query;
+        
+        if (!profileId) {
+            return res.status(400).json({ error: 'profileId query parameter is required' });
+        }
+
+        // profileId should be a UUID string, no conversion needed
+        if (typeof profileId !== 'string' || profileId.trim() === '') {
+            return res.status(400).json({ error: 'Invalid profileId format' });
+        }
+        
+        const meals = await mealsLib.getMeals(profileId);
+        
+        res.json(meals || []);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // GET /meals - Get all meals or filter by profile
 router.get('/', async (req, res) => {
     try {

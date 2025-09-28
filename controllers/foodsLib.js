@@ -8,6 +8,43 @@ async function getAllFoods() {
     });
 }
 
+// Get foods that match user's dietary restrictions (including For Everyone foods with id=0)
+async function getFoodsForUser(userDietaryRestrictions = []) {
+    // If user has no restrictions, they can eat any food
+    if (userDietaryRestrictions.length === 0) {
+        return prisma.food.findMany({
+            include: { dietaryRestrictions: true, preferences: true }
+        });
+    }
+    
+    // If user has restrictions, they can only eat:
+    // 1. Foods tagged "For Everyone" (id = 0)
+    // 2. Foods that match their specific dietary restrictions
+    return prisma.food.findMany({
+        where: {
+            OR: [
+                // Foods with "For Everyone" restriction (id = 0)
+                {
+                    dietaryRestrictions: {
+                        some: { DietaryRestrictionID: 0 }
+                    }
+                },
+                // Foods that match user's dietary restrictions
+                {
+                    dietaryRestrictions: {
+                        some: {
+                            DietaryRestrictionID: {
+                                in: userDietaryRestrictions
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        include: { dietaryRestrictions: true, preferences: true }
+    });
+}
+
 async function getFoodById(id) {
 
     foodId = parseInt(id);
@@ -60,17 +97,58 @@ async function getRecommendedFoodsForProfile(profileId) {
     });
     if (!profile) return null;
 
-    return prisma.food.findMany({
+    const userRestrictions = profile.DietaryRestriction.map(r => r.DietaryRestrictionID);
+    
+    // Base query to match user preferences
+    const baseQuery = {
         where: {
-            preferences: { some: { PreferenceID: { in: profile.Preference.map(p => p.PreferenceID) } } },
-            dietaryRestrictions: { some: { DietaryRestrictionID: { in: profile.DietaryRestriction.map(r => r.DietaryRestrictionID) } } }
+            AND: [
+                // Match user preferences
+                {
+                    preferences: { 
+                        some: { 
+                            PreferenceID: { 
+                                in: profile.Preference.map(p => p.PreferenceID) 
+                            } 
+                        } 
+                    }
+                }
+            ]
         },
         include: { dietaryRestrictions: true, preferences: true }
+    };
+    
+    // If user has no dietary restrictions, they can eat any food with their preferences
+    if (userRestrictions.length === 0) {
+        return prisma.food.findMany(baseQuery);
+    }
+    
+    // If user has restrictions, add dietary restriction filtering
+    baseQuery.where.AND.push({
+        OR: [
+            {
+                dietaryRestrictions: {
+                    some: { DietaryRestrictionID: 0 } // For Everyone
+                }
+            },
+            {
+                dietaryRestrictions: {
+                    some: {
+                        DietaryRestrictionID: {
+                            in: userRestrictions
+                        }
+                    }
+                }
+            }
+        ]
     });
+    
+    return prisma.food.findMany(baseQuery);
 }
 
 module.exports = {
     getAllFoods,
+    getFoodsForUser,
     getFoodById,
     getFoodsByPreference,
     getFoodsByRestriction,
@@ -93,13 +171,16 @@ async function deleteFood(id) {
 }
 
 // Create a new food
-async function createFood({ name, svgLink, preferences = [], dietaryRestrictions = [] }) {
+async function createFood({ name, svgLink, preferences = [], dietaryRestrictions = [], hasNoRestrictions = false }) {
+    // If hasNoRestrictions is true, set dietaryRestrictions to [0] (For Everyone)
+    const finalRestrictions = hasNoRestrictions ? [0] : dietaryRestrictions;
+    
     return prisma.food.create({
         data: {
             name,
             svgLink,
             preferences: preferences.length ? { connect: preferences.map(id => ({ PreferenceID: id })) } : undefined,
-            dietaryRestrictions: dietaryRestrictions.length ? { connect: dietaryRestrictions.map(id => ({ DietaryRestrictionID: id })) } : undefined
+            dietaryRestrictions: finalRestrictions.length ? { connect: finalRestrictions.map(id => ({ DietaryRestrictionID: id })) } : undefined
         },
         include: { dietaryRestrictions: true, preferences: true }
     });

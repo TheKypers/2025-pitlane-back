@@ -3,6 +3,18 @@ const express = require('express');
 const router = express.Router();
 const foodsController = require('../controllers/foodsLib');
 
+// GET /foods/for-user?restrictions=1,2,3 - get foods filtered by user dietary restrictions
+router.get('/for-user', async (req, res) => {
+    try {
+        const { restrictions } = req.query;
+        const userRestrictions = restrictions ? restrictions.split(',').map(id => parseInt(id)).filter(id => !isNaN(id)) : [];
+        const foods = await foodsController.getFoodsForUser(userRestrictions);
+        res.json(foods);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /foods/by-preference/:preferenceId
 router.get('/by-preference/:preferenceId', async (req, res) => {
     try {
@@ -94,8 +106,8 @@ router.get('/', async (req, res) => {
 // POST /foods - create a new food
 router.post('/', async (req, res) => {
     try {
-        const { name, svgLink, preferences, dietaryRestrictions } = req.body;
-        const food = await foodsController.createFood({ name, svgLink, preferences, dietaryRestrictions });
+        const { name, svgLink, preferences, dietaryRestrictions, hasNoRestrictions } = req.body;
+        const food = await foodsController.createFood({ name, svgLink, preferences, dietaryRestrictions, hasNoRestrictions });
         res.status(201).json(food);
     } catch (err) {
         if (err.code === 'P2002') {

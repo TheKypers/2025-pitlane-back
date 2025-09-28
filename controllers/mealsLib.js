@@ -2,6 +2,30 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+async function getAllMealsWithProfiles() {
+    return prisma.meal.findMany({
+        include: {
+            foods: {
+                select: {
+                    FoodID: true,
+                    name: true,
+                    svgLink: true
+                }
+            },
+            profile: {
+                select: {
+                    id: true,
+                    username: true,
+                    role: true
+                }
+            }
+        },
+        orderBy: {
+            createdAt: 'desc'
+        }
+    });
+}
+
 async function getMeals(profileId) {
     const whereClause = profileId ? { profileId: profileId } : {};
     
@@ -209,6 +233,7 @@ async function getMealsByProfile(profileId) {
 }
 
 module.exports = {
+    getAllMealsWithProfiles,
     getMeals,
     getMealById,
     createMeal,
