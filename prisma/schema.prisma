@@ -26,20 +26,22 @@ model Profile {
   Preference         Preference[]         @relation("profile_preference")
   DietaryRestriction DietaryRestriction[] @relation("profile_dietaryrestriction")
   meals              Meal[]               @relation("profile_meal")
+  foods              Food[]               @relation("profile_food")
 
   @@map("profile")
 }
-
-
 
 model Food {
   FoodID              Int                  @id @default(autoincrement())
   name                String               @unique
   svgLink             String // link to the SVG file
   kCal                Int                  @default(0) @db.Integer
+  isActive            Boolean              @default(true) // for soft deletion
+  profileId           String               @db.Uuid // admin by default, or user's UUID for custom foods
+  profile             Profile              @relation("profile_food", fields: [profileId], references: [id], onDelete: Cascade)
   dietaryRestrictions DietaryRestriction[] @relation("food_dietaryrestriction")
   preferences         Preference[]         @relation("preference_food")
-  meals               Meal[]               @relation("meal_food")
+  mealFoods           MealFood[]           @relation("food_mealfood")
 
   @@map("food")
 }
@@ -63,14 +65,26 @@ model DietaryRestriction {
 }
 
 model Meal {
-  MealID      Int      @id @default(autoincrement())
+  MealID      Int        @id @default(autoincrement())
   name        String
   description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  profileId   String   @db.Uuid
-  profile     Profile  @relation("profile_meal", fields: [profileId], references: [id], onDelete: Cascade)
-  foods       Food[]   @relation("meal_food")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  profileId   String     @db.Uuid
+  profile     Profile    @relation("profile_meal", fields: [profileId], references: [id], onDelete: Cascade)
+  mealFoods   MealFood[] @relation("meal_mealfood")
 
   @@map("meal")
+}
+
+model MealFood {
+  MealFoodID Int   @id @default(autoincrement())
+  mealId     Int
+  foodId     Int
+  quantity   Int   @default(1) // number of units of this food in the meal
+  meal       Meal  @relation("meal_mealfood", fields: [mealId], references: [MealID], onDelete: Cascade)
+  food       Food  @relation("food_mealfood", fields: [foodId], references: [FoodID], onDelete: Cascade)
+
+  @@unique([mealId, foodId]) // prevents duplicate food entries in the same meal
+  @@map("mealfood")
 }
