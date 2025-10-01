@@ -149,7 +149,7 @@ async function createMeal(name, description, profileId, foodIds) {
     });
 }
 
-async function updateMeal(id, name, description, foodIds) {
+async function updateMeal(id, name, description, mealData) {
     if (isNaN(id)) {
         throw new Error(`Invalid MealID: ${id}`);
     }
@@ -173,32 +173,64 @@ async function updateMeal(id, name, description, foodIds) {
         updateData.description = description;
     }
 
-    // If foodIds are provided, validate and update the food connections
-    if (foodIds && Array.isArray(foodIds)) {
-        if (foodIds.length === 0) {
+    // Handle meal foods data
+    if (mealData && Array.isArray(mealData)) {
+        if (mealData.length === 0) {
             throw new Error('A meal must have at least one food');
         }
 
-        // Validate that all food IDs exist
-        const existingFoods = await prisma.food.findMany({
-            where: {
-                FoodID: {
-                    in: foodIds.map(id => parseInt(id))
+        // Check if it's the new format (with quantities) or old format (just foodIds)
+        const isNewFormat = mealData.some(item => typeof item === 'object' && item.hasOwnProperty('foodId'));
+        
+        if (isNewFormat) {
+            // New format: array of objects with foodId and quantity
+            const foodIds = mealData.map(item => parseInt(item.foodId));
+            
+            // Validate that all food IDs exist
+            const existingFoods = await prisma.food.findMany({
+                where: {
+                    FoodID: {
+                        in: foodIds
+                    }
                 }
+            });
+
+            if (existingFoods.length !== foodIds.length) {
+                throw new Error('One or more food IDs are invalid');
             }
-        });
 
-        if (existingFoods.length !== foodIds.length) {
-            throw new Error('One or more food IDs are invalid');
+            updateData.mealFoods = {
+                deleteMany: {}, // Delete all existing MealFood records for this meal
+                create: mealData.map(item => ({
+                    foodId: parseInt(item.foodId),
+                    quantity: parseInt(item.quantity) || 1
+                }))
+            };
+        } else {
+            // Old format: array of foodIds
+            const foodIds = mealData.map(id => parseInt(id));
+            
+            // Validate that all food IDs exist
+            const existingFoods = await prisma.food.findMany({
+                where: {
+                    FoodID: {
+                        in: foodIds
+                    }
+                }
+            });
+
+            if (existingFoods.length !== foodIds.length) {
+                throw new Error('One or more food IDs are invalid');
+            }
+
+            updateData.mealFoods = {
+                deleteMany: {}, // Delete all existing MealFood records for this meal
+                create: foodIds.map(id => ({
+                    foodId: parseInt(id),
+                    quantity: 1 // default quantity
+                }))
+            };
         }
-
-        updateData.mealFoods = {
-            deleteMany: {}, // Delete all existing MealFood records for this meal
-            create: foodIds.map(id => ({
-                foodId: parseInt(id),
-                quantity: 1 // default quantity
-            }))
-        };
     }
 
     return prisma.meal.update({

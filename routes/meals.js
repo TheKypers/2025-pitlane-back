@@ -81,9 +81,12 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description, foodIds } = req.body;
+        const { name, description, foodIds, mealFoods } = req.body;
         
-        const meal = await mealsLib.updateMeal(parseInt(id), name, description, foodIds);
+        // Use mealFoods if provided (new format with quantities), otherwise fallback to foodIds
+        const updateData = mealFoods || foodIds;
+        
+        const meal = await mealsLib.updateMeal(parseInt(id), name, description, updateData);
         if (!meal) {
             return res.status(404).json({ error: 'Meal not found' });
         }
