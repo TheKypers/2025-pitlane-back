@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 
 async function getAllFoods() {
     return prisma.food.findMany({
-        include: { dietaryRestrictions: true, preferences: true }
+        include: { dietaryRestrictions: true, preferences: true, profile: true }
     });
 }
 
@@ -13,7 +13,7 @@ async function getFoodsForUser(userDietaryRestrictions = []) {
     // If user has no restrictions, they can eat any food
     if (userDietaryRestrictions.length === 0) {
         return prisma.food.findMany({
-            include: { dietaryRestrictions: true, preferences: true }
+            include: { dietaryRestrictions: true, preferences: true, profile: true }
         });
     }
     
@@ -23,10 +23,22 @@ async function getFoodsForUser(userDietaryRestrictions = []) {
     return prisma.food.findMany({
         where: {
             OR: [
-                // Foods with "For Everyone" restriction (id = 0)
+                // Foods with no dietary restrictions (available to everyone)
                 {
                     dietaryRestrictions: {
-                        some: { DietaryRestrictionID: 0 }
+                        none: {}
+                    }
+                },
+                // Foods with "For Everyone" restriction (if it exists)
+                {
+                    dietaryRestrictions: {
+                        some: { 
+                            OR: [
+                                { DietaryRestrictionID: 0 },
+                                { name: { contains: "For Everyone", mode: 'insensitive' } },
+                                { name: { contains: "everyone", mode: 'insensitive' } }
+                            ]
+                        }
                     }
                 },
                 // Foods that match user's dietary restrictions
@@ -41,7 +53,7 @@ async function getFoodsForUser(userDietaryRestrictions = []) {
                 }
             ]
         },
-        include: { dietaryRestrictions: true, preferences: true }
+        include: { dietaryRestrictions: true, preferences: true, profile: true }
     });
 }
 
@@ -55,21 +67,21 @@ async function getFoodById(id) {
 
     return prisma.food.findUnique({
         where: { FoodID: parseInt(foodId) },
-        include: { dietaryRestrictions: true, preferences: true }
+        include: { dietaryRestrictions: true, preferences: true, profile: true }
     });
 }
 
 async function getFoodsByPreference(preferenceId) {
     return prisma.food.findMany({
         where: { preferences: { some: { PreferenceID: parseInt(preferenceId) } } },
-        include: { dietaryRestrictions: true, preferences: true }
+        include: { dietaryRestrictions: true, preferences: true, profile: true }
     });
 }
 
 async function getFoodsByRestriction(restrictionId) {
     return prisma.food.findMany({
         where: { dietaryRestrictions: { some: { DietaryRestrictionID: parseInt(restrictionId) } } },
-        include: { dietaryRestrictions: true, preferences: true }
+        include: { dietaryRestrictions: true, preferences: true, profile: true }
     });
 }
 
@@ -115,7 +127,7 @@ async function getRecommendedFoodsForProfile(profileId) {
                 }
             ]
         },
-        include: { dietaryRestrictions: true, preferences: true }
+        include: { dietaryRestrictions: true, preferences: true, profile: true }
     };
     
     // If user has no dietary restrictions, they can eat any food with their preferences
@@ -126,11 +138,25 @@ async function getRecommendedFoodsForProfile(profileId) {
     // If user has restrictions, add dietary restriction filtering
     baseQuery.where.AND.push({
         OR: [
+            // Foods with no dietary restrictions (available to everyone)
             {
                 dietaryRestrictions: {
-                    some: { DietaryRestrictionID: 0 } // For Everyone
+                    none: {}
                 }
             },
+            // Foods with "For Everyone" restriction (if it exists)
+            {
+                dietaryRestrictions: {
+                    some: { 
+                        OR: [
+                            { DietaryRestrictionID: 0 },
+                            { name: { contains: "For Everyone", mode: 'insensitive' } },
+                            { name: { contains: "everyone", mode: 'insensitive' } }
+                        ]
+                    }
+                }
+            },
+            // Foods that match user's dietary restrictions
             {
                 dietaryRestrictions: {
                     some: {
@@ -171,24 +197,59 @@ async function deleteFood(id) {
 }
 
 // Create a new food
-async function createFood({ name, svgLink, kCal = 0, preferences = [], dietaryRestrictions = [], hasNoRestrictions = false }) {
+async function createFood({ name, svgLink, kCal = 0, preferences = [], dietaryRestrictions = [], hasNoRestrictions = false, profileId }) {
+    // Validate required fields
+    if (!profileId) {
+        throw new Error('profileId is required');
+    }
+    
     // Validate kCal is not negative
     if (kCal < 0) {
         throw new Error('kCal cannot be less than 0');
     }
     
-    // If hasNoRestrictions is true, set dietaryRestrictions to [0] (For Everyone)
-    const finalRestrictions = hasNoRestrictions ? [0] : dietaryRestrictions;
+    // Handle dietary restrictions
+    let finalRestrictions = [];
+    if (!hasNoRestrictions && dietaryRestrictions.length > 0) {
+        finalRestrictions = dietaryRestrictions;
+    }
+    // If hasNoRestrictions is true, we leave finalRestrictions empty
+    // This means the food has no dietary restrictions and is available to everyone
+    
+    // Validate that all preference IDs exist
+    if (preferences.length > 0) {
+        const existingPreferences = await prisma.preference.findMany({
+            where: { PreferenceID: { in: preferences } }
+        });
+        if (existingPreferences.length !== preferences.length) {
+            const foundIds = existingPreferences.map(p => p.PreferenceID);
+            const missingIds = preferences.filter(id => !foundIds.includes(id));
+            throw new Error(`Invalid preference IDs: ${missingIds.join(', ')}`);
+        }
+    }
+    
+    // Validate that all dietary restriction IDs exist
+    if (finalRestrictions.length > 0) {
+        const existingRestrictions = await prisma.dietaryRestriction.findMany({
+            where: { DietaryRestrictionID: { in: finalRestrictions } }
+        });
+        if (existingRestrictions.length !== finalRestrictions.length) {
+            const foundIds = existingRestrictions.map(r => r.DietaryRestrictionID);
+            const missingIds = finalRestrictions.filter(id => !foundIds.includes(id));
+            throw new Error(`Invalid dietary restriction IDs: ${missingIds.join(', ')}`);
+        }
+    }
     
     return prisma.food.create({
         data: {
             name,
             svgLink,
             kCal,
+            profileId,
             preferences: preferences.length ? { connect: preferences.map(id => ({ PreferenceID: id })) } : undefined,
             dietaryRestrictions: finalRestrictions.length ? { connect: finalRestrictions.map(id => ({ DietaryRestrictionID: id })) } : undefined
         },
-        include: { dietaryRestrictions: true, preferences: true }
+        include: { dietaryRestrictions: true, preferences: true, profile: true }
     });
 }
 
@@ -213,6 +274,6 @@ async function updateFood(id, { name, svgLink, kCal, preferences = [], dietaryRe
             preferences: { set: preferences.map(pid => ({ PreferenceID: pid })) },
             dietaryRestrictions: { set: dietaryRestrictions.map(rid => ({ DietaryRestrictionID: rid })) }
         },
-        include: { dietaryRestrictions: true, preferences: true }
+        include: { dietaryRestrictions: true, preferences: true, profile: true }
     });
 }

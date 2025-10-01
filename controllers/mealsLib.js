@@ -5,11 +5,15 @@ const prisma = new PrismaClient();
 async function getAllMealsWithProfiles() {
     return prisma.meal.findMany({
         include: {
-            foods: {
-                select: {
-                    FoodID: true,
-                    name: true,
-                    svgLink: true
+            mealFoods: {
+                include: {
+                    food: {
+                        include: {
+                            dietaryRestrictions: true,
+                            preferences: true,
+                            profile: true
+                        }
+                    }
                 }
             },
             profile: {
@@ -32,10 +36,15 @@ async function getMeals(profileId) {
     return prisma.meal.findMany({
         where: whereClause,
         include: {
-            foods: {
+            mealFoods: {
                 include: {
-                    dietaryRestrictions: true,
-                    preferences: true
+                    food: {
+                        include: {
+                            dietaryRestrictions: true,
+                            preferences: true,
+                            profile: true
+                        }
+                    }
                 }
             },
             profile: {
@@ -60,10 +69,15 @@ async function getMealById(id) {
     return prisma.meal.findUnique({
         where: { MealID: id },
         include: {
-            foods: {
+            mealFoods: {
                 include: {
-                    dietaryRestrictions: true,
-                    preferences: true
+                    food: {
+                        include: {
+                            dietaryRestrictions: true,
+                            preferences: true,
+                            profile: true
+                        }
+                    }
                 }
             },
             profile: {
@@ -105,15 +119,23 @@ async function createMeal(name, description, profileId, foodIds) {
             name,
             description,
             profileId,
-            foods: {
-                connect: foodIds.map(id => ({ FoodID: parseInt(id) }))
+            mealFoods: {
+                create: foodIds.map(id => ({
+                    foodId: parseInt(id),
+                    quantity: 1 // default quantity
+                }))
             }
         },
         include: {
-            foods: {
+            mealFoods: {
                 include: {
-                    dietaryRestrictions: true,
-                    preferences: true
+                    food: {
+                        include: {
+                            dietaryRestrictions: true,
+                            preferences: true,
+                            profile: true
+                        }
+                    }
                 }
             },
             profile: {
@@ -170,8 +192,12 @@ async function updateMeal(id, name, description, foodIds) {
             throw new Error('One or more food IDs are invalid');
         }
 
-        updateData.foods = {
-            set: foodIds.map(id => ({ FoodID: parseInt(id) }))
+        updateData.mealFoods = {
+            deleteMany: {}, // Delete all existing MealFood records for this meal
+            create: foodIds.map(id => ({
+                foodId: parseInt(id),
+                quantity: 1 // default quantity
+            }))
         };
     }
 
@@ -179,10 +205,15 @@ async function updateMeal(id, name, description, foodIds) {
         where: { MealID: id },
         data: updateData,
         include: {
-            foods: {
+            mealFoods: {
                 include: {
-                    dietaryRestrictions: true,
-                    preferences: true
+                    food: {
+                        include: {
+                            dietaryRestrictions: true,
+                            preferences: true,
+                            profile: true
+                        }
+                    }
                 }
             },
             profile: {
@@ -219,10 +250,15 @@ async function getMealsByProfile(profileId) {
     return prisma.meal.findMany({
         where: { profileId },
         include: {
-            foods: {
+            mealFoods: {
                 include: {
-                    dietaryRestrictions: true,
-                    preferences: true
+                    food: {
+                        include: {
+                            dietaryRestrictions: true,
+                            preferences: true,
+                            profile: true
+                        }
+                    }
                 }
             }
         },

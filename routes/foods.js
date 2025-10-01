@@ -106,8 +106,13 @@ router.get('/', async (req, res) => {
 // POST /foods - create a new food
 router.post('/', async (req, res) => {
     try {
-        const { name, svgLink, kCal, preferences, dietaryRestrictions, hasNoRestrictions } = req.body;
-        const food = await foodsController.createFood({ name, svgLink, kCal, preferences, dietaryRestrictions, hasNoRestrictions });
+        const { name, svgLink, kCal, preferences, dietaryRestrictions, hasNoRestrictions, profileId } = req.body;
+        
+        if (!profileId) {
+            return res.status(400).json({ error: 'profileId is required' });
+        }
+        
+        const food = await foodsController.createFood({ name, svgLink, kCal, preferences, dietaryRestrictions, hasNoRestrictions, profileId });
         res.status(201).json(food);
     } catch (err) {
         if (err.code === 'P2002') {
