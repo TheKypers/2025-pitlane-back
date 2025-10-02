@@ -111,7 +111,7 @@ router.post('/', async (req, res) => {
         if (!profileId) {
             return res.status(400).json({ error: 'profileId is required' });
         }
-        
+
         const food = await foodsController.createFood({ name, svgLink, kCal, preferences, dietaryRestrictions, hasNoRestrictions, profileId });
         res.status(201).json(food);
     } catch (err) {
