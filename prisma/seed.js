@@ -27,11 +27,22 @@ async function main() {
     create: { name: 'Lactose Free' },
   });
 
+  // Create Profile (only id and username)
+  const testProfile = await prisma.profile.upsert({
+    where: { username: 'testuser' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000001', // Example UUID, replace as needed
+      username: 'testuser',
+    },
+  });
+
   // Create Foods
   const tofu = await prisma.food.create({
     data: {
       name: 'Tofu',
       svgLink: '/images/tofu.svg',
+      profileId: testProfile.id,
       preferences: { connect: [{ PreferenceID: vegan.PreferenceID }, { PreferenceID: healthy.PreferenceID }] },
       dietaryRestrictions: { connect: [{ DietaryRestrictionID: glutenFree.DietaryRestrictionID }] },
     },
@@ -40,18 +51,9 @@ async function main() {
     data: {
       name: 'Salad',
       svgLink: '/images/salad.svg',
+      profileId: testProfile.id,
       preferences: { connect: [{ PreferenceID: healthy.PreferenceID }] },
       dietaryRestrictions: { connect: [{ DietaryRestrictionID: glutenFree.DietaryRestrictionID }, { DietaryRestrictionID: lactoseFree.DietaryRestrictionID }] },
-    },
-  });
-
-  // Create Profile (only id and username)
-  await prisma.profile.upsert({
-    where: { username: 'testuser' },
-    update: {},
-    create: {
-      id: '00000000-0000-0000-0000-000000000001', // Example UUID, replace as needed
-      username: 'testuser',
     },
   });
 }
