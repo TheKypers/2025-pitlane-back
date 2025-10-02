@@ -315,6 +315,111 @@ async function deleteMeal(id) {
     }
 }
 
+async function getRecommendedMealsForProfile(profileId) {
+    const profile = await prisma.profile.findUnique({
+        where: { id: profileId },
+        include: { Preference: true, DietaryRestriction: true }
+    });
+    if (!profile) return null;
+
+    const userRestrictions = profile.DietaryRestriction.map(r => r.DietaryRestrictionID);
+    
+    // Base query to find meals that contain foods matching user preferences
+    const baseQuery = {
+        where: {
+            AND: [
+                // Match meals that contain foods with user preferences
+                {
+                    mealFoods: {
+                        some: {
+                            food: {
+                                preferences: { 
+                                    some: { 
+                                        PreferenceID: { 
+                                            in: profile.Preference.map(p => p.PreferenceID) 
+                                        } 
+                                    } 
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        include: {
+            mealFoods: {
+                include: {
+                    food: {
+                        include: {
+                            dietaryRestrictions: true,
+                            preferences: true,
+                            profile: true
+                        }
+                    }
+                }
+            },
+            profile: {
+                select: {
+                    id: true,
+                    username: true,
+                    role: true
+                }
+            }
+        },
+        orderBy: {
+            createdAt: 'desc'
+        }
+    };
+    
+    // If user has no dietary restrictions, they can eat any meal with their preferred foods
+    if (userRestrictions.length === 0) {
+        return prisma.meal.findMany(baseQuery);
+    }
+    
+    // If user has restrictions, add dietary restriction filtering
+    // Only include meals where ALL foods are compatible with user's restrictions
+    baseQuery.where.AND.push({
+        mealFoods: {
+            every: {
+                food: {
+                    OR: [
+                        // Foods with no dietary restrictions (available to everyone)
+                        {
+                            dietaryRestrictions: {
+                                none: {}
+                            }
+                        },
+                        // Foods with "For Everyone" restriction (if it exists)
+                        {
+                            dietaryRestrictions: {
+                                some: { 
+                                    OR: [
+                                        { DietaryRestrictionID: 0 },
+                                        { name: { contains: "For Everyone", mode: 'insensitive' } },
+                                        { name: { contains: "everyone", mode: 'insensitive' } }
+                                    ]
+                                }
+                            }
+                        },
+                        // Foods that match user's dietary restrictions
+                        {
+                            dietaryRestrictions: {
+                                some: {
+                                    DietaryRestrictionID: {
+                                        in: userRestrictions
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+    });
+    
+    return prisma.meal.findMany(baseQuery);
+}
+
 async function getMealsByProfile(profileId) {
     return prisma.meal.findMany({
         where: { profileId },
@@ -344,5 +449,6 @@ module.exports = {
     createMeal,
     updateMeal,
     deleteMeal,
-    getMealsByProfile
+    getMealsByProfile,
+    getRecommendedMealsForProfile
 };

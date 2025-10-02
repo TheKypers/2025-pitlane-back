@@ -45,6 +45,17 @@ router.get('/', async (req, res) => {
     }
 });
 
+// GET /meals/recommended/:profileId - Get recommended meals for a profile
+router.get('/recommended/:profileId', async (req, res) => {
+    try {
+        const meals = await mealsLib.getRecommendedMealsForProfile(req.params.profileId);
+        if (meals === null) return res.status(404).json({ error: 'Profile not found' });
+        res.json(meals);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /meals/:id - Get a specific meal by ID
 router.get('/:id', async (req, res) => {
     try {
