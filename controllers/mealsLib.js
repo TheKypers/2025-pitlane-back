@@ -91,12 +91,50 @@ async function getMealById(id) {
     });
 }
 
-async function createMeal(name, description, profileId, foodIds) {
+async function createMeal(name, description, profileId, mealData) {
+    console.log('createMeal called with:', { name, profileId, mealData });
+    
+    // Check if mealData is in the new format (array of objects with foodId and quantity) 
+    // or old format (array of foodIds)
+    const isNewFormat = Array.isArray(mealData) && mealData.length > 0 && 
+                       typeof mealData[0] === 'object' && mealData[0].hasOwnProperty('foodId');
+    
+    let foodIds;
+    let mealFoodsData;
+    
+    if (isNewFormat) {
+        // New format: array of objects with foodId and quantity
+        foodIds = mealData.map(item => parseInt(item.foodId));
+        mealFoodsData = mealData.map(item => ({
+            foodId: parseInt(item.foodId),
+            quantity: parseInt(item.quantity) || 1 // Use the actual quantity from the frontend
+        }));
+        
+        console.log('Using new format (mealFoods) with quantities:', mealFoodsData);
+        
+        // Validate quantities are positive
+        for (const item of mealData) {
+            const quantity = parseInt(item.quantity);
+            if (quantity !== undefined && (isNaN(quantity) || quantity <= 0)) {
+                throw new Error('Quantity must be a positive number');
+            }
+        }
+    } else {
+        // Old format: array of foodIds (for backward compatibility)
+        foodIds = mealData.map(id => parseInt(id));
+        mealFoodsData = foodIds.map(id => ({
+            foodId: parseInt(id),
+            quantity: 1 // default quantity
+        }));
+        
+        console.log('Using old format (foodIds) with default quantities:', mealFoodsData);
+    }
+
     // Validate that all food IDs exist
     const existingFoods = await prisma.food.findMany({
         where: {
             FoodID: {
-                in: foodIds.map(id => parseInt(id))
+                in: foodIds
             }
         }
     });
@@ -114,16 +152,15 @@ async function createMeal(name, description, profileId, foodIds) {
         throw new Error('Profile not found');
     }
 
+    console.log('Creating meal with mealFoods data:', mealFoodsData);
+
     return prisma.meal.create({
         data: {
             name,
             description,
             profileId,
             mealFoods: {
-                create: foodIds.map(id => ({
-                    foodId: parseInt(id),
-                    quantity: 1 // default quantity
-                }))
+                create: mealFoodsData
             }
         },
         include: {
