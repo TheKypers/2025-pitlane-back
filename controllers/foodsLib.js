@@ -85,6 +85,13 @@ async function getFoodsByRestriction(restrictionId) {
     });
 }
 
+async function getFoodsByProfileId(profileId) {
+    return prisma.food.findMany({
+        where: { profileId: profileId },
+        include: { dietaryRestrictions: true, preferences: true, profile: true }
+    });
+}
+
 async function getFoodsByPreferenceAndRestriction(preferenceId, restrictionId) {
     // If both params are present, return intersection, else fallback to one
     if (preferenceId && restrictionId) {
@@ -179,6 +186,7 @@ module.exports = {
     getFoodsByPreference,
     getFoodsByRestriction,
     getFoodsByPreferenceAndRestriction,
+    getFoodsByProfileId,
     getRecommendedFoodsForProfile,
     createFood,
     deleteFood,

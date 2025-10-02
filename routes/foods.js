@@ -15,6 +15,16 @@ router.get('/for-user', async (req, res) => {
     }
 });
 
+// GET /foods/user/:profileId - get foods created by a specific user
+router.get('/user/:profileId', async (req, res) => {
+    try {
+        const foods = await foodsController.getFoodsByProfileId(req.params.profileId);
+        res.json(foods);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /foods/by-preference/:preferenceId
 router.get('/by-preference/:preferenceId', async (req, res) => {
     try {
