@@ -27,6 +27,9 @@ model Profile {
   DietaryRestriction DietaryRestriction[] @relation("profile_dietaryrestriction")
   meals              Meal[]               @relation("profile_meal")
   foods              Food[]               @relation("profile_food")
+  groupMemberships   GroupMember[]        @relation("profile_groupmember")
+  createdGroups      Group[]              @relation("profile_createdgroup")
+  consumptions       Consumption[]        @relation("profile_consumption")
 
   @@map("profile")
 }
@@ -42,6 +45,7 @@ model Food {
   dietaryRestrictions DietaryRestriction[] @relation("food_dietaryrestriction")
   preferences         Preference[]         @relation("preference_food")
   mealFoods           MealFood[]           @relation("food_mealfood")
+  consumptionFoods    ConsumptionFood[]    @relation("food_consumptionfood")
 
   @@map("food")
 }
@@ -87,4 +91,73 @@ model MealFood {
 
   @@unique([mealId, foodId]) // prevents duplicate food entries in the same meal
   @@map("mealfood")
+}
+
+enum GroupRole {
+  admin
+  member
+}
+
+enum ConsumptionType {
+  individual
+  group
+}
+
+model Group {
+  GroupID     Int           @id @default(autoincrement())
+  name        String
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  createdBy   String        @db.Uuid
+  isActive    Boolean       @default(true) // for soft deletion
+  creator     Profile       @relation("profile_createdgroup", fields: [createdBy], references: [id], onDelete: Cascade)
+  members     GroupMember[] @relation("group_groupmember")
+  consumptions Consumption[] @relation("group_consumption")
+
+  @@map("group")
+}
+
+model GroupMember {
+  GroupMemberID Int       @id @default(autoincrement())
+  groupId       Int
+  profileId     String    @db.Uuid
+  role          GroupRole @default(member)
+  joinedAt      DateTime  @default(now())
+  isActive      Boolean   @default(true) // for soft removal from group
+  group         Group     @relation("group_groupmember", fields: [groupId], references: [GroupID], onDelete: Cascade)
+  profile       Profile   @relation("profile_groupmember", fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, profileId]) // prevents duplicate memberships
+  @@map("groupmember")
+}
+
+model Consumption {
+  ConsumptionID   Int            @id @default(autoincrement())
+  name            String
+  description     String?
+  type            ConsumptionType
+  consumedAt      DateTime       @default(now()) // when the consumption actually happened
+  recordedAt      DateTime       @default(now()) // when it was recorded in the system
+  profileId       String         @db.Uuid // who recorded the consumption
+  groupId         Int?           // null for individual consumptions
+  totalKcal       Int            @default(0) @db.Integer
+  isActive        Boolean        @default(true) // for soft deletion
+  profile         Profile        @relation("profile_consumption", fields: [profileId], references: [id], onDelete: Cascade)
+  group           Group?         @relation("group_consumption", fields: [groupId], references: [GroupID], onDelete: SetNull)
+  consumptionFoods ConsumptionFood[] @relation("consumption_consumptionFood")
+
+  @@map("consumption")
+}
+
+model ConsumptionFood {
+  ConsumptionFoodID Int         @id @default(autoincrement())
+  consumptionId     Int
+  foodId            Int
+  quantity          Int         @default(1) // number of units of this food consumed
+  consumption       Consumption @relation("consumption_consumptionFood", fields: [consumptionId], references: [ConsumptionID], onDelete: Cascade)
+  food              Food        @relation("food_consumptionfood", fields: [foodId], references: [FoodID], onDelete: Cascade)
+
+  @@unique([consumptionId, foodId]) // prevents duplicate food entries in the same consumption
+  @@map("consumptionfood")
 }

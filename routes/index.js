@@ -3,6 +3,8 @@ const router = express.Router();
 const foodsRouter = require('./foods');
 const profilesRouter = require('./profile');
 const mealsRouter = require('./meals');
+const groupsRouter = require('./groups');
+const consumptionsRouter = require('./consumptions');
 
 const preferencesRouter = require('./preferences');
 const dietaryRestrictionsRouter = require('./dietaryRestrictions');
@@ -10,6 +12,8 @@ const dietaryRestrictionsRouter = require('./dietaryRestrictions');
 router.use('/foods', foodsRouter);
 router.use('/profile', profilesRouter);
 router.use('/meals', mealsRouter);
+router.use('/groups', groupsRouter);
+router.use('/consumptions', consumptionsRouter);
 
 router.use('/preferences', preferencesRouter);
 router.use('/dietary-restrictions', dietaryRestrictionsRouter);
