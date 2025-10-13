@@ -325,6 +325,133 @@ async function addGroupMember(groupId, profileId, role = 'member') {
 }
 
 /**
+ * Send invitation to join a group
+ */
+async function sendGroupInvitation(groupId, invitedUserId, invitedById, message = null) {
+    // Check if group exists and inviter has permission
+    const group = await prisma.group.findUnique({
+        where: { GroupID: parseInt(groupId) },
+        include: {
+            members: {
+                where: {
+                    profileId: invitedById,
+                    isActive: true
+                }
+            }
+        }
+    });
+
+    if (!group) {
+        throw new Error('Group not found');
+    }
+
+    const isCreator = group.createdBy === invitedById;
+    const isGroupAdmin = group.members.some(member => 
+        member.profileId === invitedById && member.role === 'admin'
+    );
+
+    if (!isCreator && !isGroupAdmin) {
+        throw new Error('Insufficient permissions to send invitations');
+    }
+
+    // Check if user is already a member
+    const existingMember = await prisma.groupMember.findUnique({
+        where: {
+            groupId_profileId: {
+                groupId: parseInt(groupId),
+                profileId: invitedUserId
+            }
+        }
+    });
+
+    if (existingMember && existingMember.isActive) {
+        throw new Error('User is already a member of this group');
+    }
+
+    // Check if there's already a pending invitation
+    const existingInvitation = await prisma.groupInvitation.findUnique({
+        where: {
+            groupId_invitedUserId: {
+                groupId: parseInt(groupId),
+                invitedUserId: invitedUserId
+            }
+        }
+    });
+
+    if (existingInvitation && existingInvitation.status === 'pending') {
+        throw new Error('There is already a pending invitation for this user');
+    }
+
+    // Create or update invitation
+    if (existingInvitation) {
+        return prisma.groupInvitation.update({
+            where: {
+                InvitationID: existingInvitation.InvitationID
+            },
+            data: {
+                status: 'pending',
+                message,
+                invitedById,
+                createdAt: new Date(),
+                respondedAt: null
+            },
+            include: {
+                group: {
+                    select: {
+                        GroupID: true,
+                        name: true,
+                        description: true
+                    }
+                },
+                invitedBy: {
+                    select: {
+                        id: true,
+                        username: true
+                    }
+                },
+                invitedUser: {
+                    select: {
+                        id: true,
+                        username: true
+                    }
+                }
+            }
+        });
+    } else {
+        return prisma.groupInvitation.create({
+            data: {
+                groupId: parseInt(groupId),
+                invitedUserId,
+                invitedById,
+                message,
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+            },
+            include: {
+                group: {
+                    select: {
+                        GroupID: true,
+                        name: true,
+                        description: true
+                    }
+                },
+                invitedBy: {
+                    select: {
+                        id: true,
+                        username: true
+                    }
+                },
+                invitedUser: {
+                    select: {
+                        id: true,
+                        username: true
+                    }
+                }
+            }
+        });
+    }
+}
+
+/**
  * Remove a member from a group (soft delete)
  */
 async function removeGroupMember(groupId, profileId, requesterId) {
@@ -448,6 +575,188 @@ async function getGroupDietaryInfo(groupId) {
     };
 }
 
+/**
+ * Get user's pending invitations
+ */
+async function getUserInvitations(userId, status = 'pending') {
+    return prisma.groupInvitation.findMany({
+        where: {
+            invitedUserId: userId,
+            status: status
+        },
+        include: {
+            group: {
+                select: {
+                    GroupID: true,
+                    name: true,
+                    description: true,
+                    createdAt: true
+                }
+            },
+            invitedBy: {
+                select: {
+                    id: true,
+                    username: true
+                }
+            }
+        },
+        orderBy: {
+            createdAt: 'desc'
+        }
+    });
+}
+
+/**
+ * Respond to group invitation (accept/reject)
+ */
+async function respondToInvitation(invitationId, userId, response) {
+    const invitation = await prisma.groupInvitation.findUnique({
+        where: {
+            InvitationID: parseInt(invitationId)
+        },
+        include: {
+            group: true
+        }
+    });
+
+    if (!invitation) {
+        throw new Error('Invitation not found');
+    }
+
+    if (invitation.invitedUserId !== userId) {
+        throw new Error('Unauthorized to respond to this invitation');
+    }
+
+    if (invitation.status !== 'pending') {
+        throw new Error('Invitation has already been responded to');
+    }
+
+    if (invitation.expiresAt && new Date() > invitation.expiresAt) {
+        // Auto-expire the invitation
+        await prisma.groupInvitation.update({
+            where: {
+                InvitationID: parseInt(invitationId)
+            },
+            data: {
+                status: 'expired',
+                respondedAt: new Date()
+            }
+        });
+        throw new Error('Invitation has expired');
+    }
+
+    const status = response === 'accept' ? 'accepted' : 'rejected';
+    
+    // Update invitation status
+    const updatedInvitation = await prisma.groupInvitation.update({
+        where: {
+            InvitationID: parseInt(invitationId)
+        },
+        data: {
+            status,
+            respondedAt: new Date()
+        },
+        include: {
+            group: {
+                select: {
+                    GroupID: true,
+                    name: true,
+                    description: true
+                }
+            },
+            invitedBy: {
+                select: {
+                    id: true,
+                    username: true
+                }
+            }
+        }
+    });
+
+    // If accepted, add user to group
+    if (response === 'accept') {
+        await addGroupMember(invitation.groupId, userId, 'member');
+    }
+
+    return updatedInvitation;
+}
+
+/**
+ * Search users by username
+ */
+async function searchUsers(query, excludeUserIds = []) {
+    return prisma.profile.findMany({
+        where: {
+            username: {
+                contains: query,
+                mode: 'insensitive'
+            },
+            id: {
+                notIn: excludeUserIds
+            }
+        },
+        select: {
+            id: true,
+            username: true,
+            role: true
+        },
+        take: 10 // Limit results
+    });
+}
+
+/**
+ * Get groups with recent activity for user's dashboard
+ */
+async function getUserDashboardGroups(profileId, limit = 5) {
+    return prisma.group.findMany({
+        where: {
+            isActive: true,
+            OR: [
+                { createdBy: profileId },
+                {
+                    members: {
+                        some: {
+                            profileId: profileId,
+                            isActive: true
+                        }
+                    }
+                }
+            ]
+        },
+        include: {
+            members: {
+                where: {
+                    isActive: true
+                },
+                select: {
+                    profile: {
+                        select: {
+                            id: true,
+                            username: true
+                        }
+                    }
+                }
+            },
+            _count: {
+                select: {
+                    consumptions: {
+                        where: {
+                            isActive: true,
+                            consumedAt: {
+                                gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // Last 7 days
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        orderBy: {
+            updatedAt: 'desc'
+        },
+        take: limit
+    });
+}
+
 module.exports = {
     getAllGroups,
     getUserGroups,
@@ -455,7 +764,12 @@ module.exports = {
     createGroup,
     updateGroup,
     addGroupMember,
+    sendGroupInvitation,
     removeGroupMember,
     deleteGroup,
-    getGroupDietaryInfo
+    getGroupDietaryInfo,
+    getUserInvitations,
+    respondToInvitation,
+    searchUsers,
+    getUserDashboardGroups
 };

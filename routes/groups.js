@@ -153,7 +153,7 @@ router.delete('/:id', async (req, res) => {
 
 /**
  * POST /groups/:id/members
- * Add a member to a group
+ * Add a member to a group (DEPRECATED - use invitations instead)
  */
 router.post('/:id/members', async (req, res) => {
     try {
@@ -178,6 +178,44 @@ router.post('/:id/members', async (req, res) => {
         
         res.status(500).json({ 
             error: 'Failed to add group member',
+            details: error.message 
+        });
+    }
+});
+
+/**
+ * POST /groups/:id/invite
+ * Send invitation to join a group
+ */
+router.post('/:id/invite', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { invitedUserId, invitedById, message } = req.body;
+        
+        if (!invitedUserId || !invitedById) {
+            return res.status(400).json({ 
+                error: 'Invited user ID and inviter ID are required' 
+            });
+        }
+        
+        const invitation = await groupsLib.sendGroupInvitation(id, invitedUserId, invitedById, message);
+        
+        res.status(201).json(invitation);
+    } catch (error) {
+        console.error('Error sending group invitation:', error);
+        
+        if (error.message === 'Group not found') {
+            return res.status(404).json({ error: error.message });
+        }
+        
+        if (error.message === 'Insufficient permissions to send invitations' ||
+            error.message === 'User is already a member of this group' ||
+            error.message === 'There is already a pending invitation for this user') {
+            return res.status(400).json({ error: error.message });
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to send group invitation',
             details: error.message 
         });
     }
@@ -238,6 +276,119 @@ router.get('/:id/dietary-info', async (req, res) => {
         
         res.status(500).json({ 
             error: 'Failed to fetch group dietary info',
+            details: error.message 
+        });
+    }
+});
+
+/**
+ * GET /groups/invitations/:userId
+ * Get user's pending invitations
+ */
+router.get('/invitations/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { status } = req.query;
+        
+        const invitations = await groupsLib.getUserInvitations(userId, status);
+        
+        res.json(invitations);
+    } catch (error) {
+        console.error('Error fetching user invitations:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch user invitations',
+            details: error.message 
+        });
+    }
+});
+
+/**
+ * PUT /groups/invitations/:invitationId/respond
+ * Respond to group invitation
+ */
+router.put('/invitations/:invitationId/respond', async (req, res) => {
+    try {
+        const { invitationId } = req.params;
+        const { userId, response } = req.body;
+        
+        if (!userId || !response) {
+            return res.status(400).json({ 
+                error: 'User ID and response are required' 
+            });
+        }
+        
+        if (!['accept', 'reject'].includes(response)) {
+            return res.status(400).json({ 
+                error: 'Response must be "accept" or "reject"' 
+            });
+        }
+        
+        const result = await groupsLib.respondToInvitation(invitationId, userId, response);
+        
+        res.json(result);
+    } catch (error) {
+        console.error('Error responding to invitation:', error);
+        
+        if (error.message === 'Invitation not found') {
+            return res.status(404).json({ error: error.message });
+        }
+        
+        if (error.message === 'Unauthorized to respond to this invitation' ||
+            error.message === 'Invitation has already been responded to' ||
+            error.message === 'Invitation has expired') {
+            return res.status(400).json({ error: error.message });
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to respond to invitation',
+            details: error.message 
+        });
+    }
+});
+
+/**
+ * GET /groups/search/users
+ * Search users by username
+ */
+router.get('/search/users', async (req, res) => {
+    try {
+        const { query, excludeIds } = req.query;
+        
+        if (!query || query.length < 2) {
+            return res.status(400).json({ 
+                error: 'Query must be at least 2 characters long' 
+            });
+        }
+        
+        const excludeUserIds = excludeIds ? excludeIds.split(',') : [];
+        const users = await groupsLib.searchUsers(query, excludeUserIds);
+        
+        res.json(users);
+    } catch (error) {
+        console.error('Error searching users:', error);
+        res.status(500).json({ 
+            error: 'Failed to search users',
+            details: error.message 
+        });
+    }
+});
+
+/**
+ * GET /groups/dashboard/:userId
+ * Get groups with recent activity for user's dashboard
+ */
+router.get('/dashboard/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { limit } = req.query;
+        
+        const groups = await groupsLib.getUserDashboardGroups(userId, limit ? parseInt(limit) : 5);
+        
+        res.json(groups);
+    } catch (error) {
+        console.error('Error fetching dashboard groups:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch dashboard groups',
             details: error.message 
         });
     }

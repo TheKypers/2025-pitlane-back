@@ -30,6 +30,8 @@ model Profile {
   groupMemberships   GroupMember[]        @relation("profile_groupmember")
   createdGroups      Group[]              @relation("profile_createdgroup")
   consumptions       Consumption[]        @relation("profile_consumption")
+  sentInvitations    GroupInvitation[]    @relation("profile_sentinvitation")
+  receivedInvitations GroupInvitation[]   @relation("profile_receivedinvitation")
 
   @@map("profile")
 }
@@ -103,6 +105,13 @@ enum ConsumptionType {
   group
 }
 
+enum InvitationStatus {
+  pending
+  accepted
+  rejected
+  expired
+}
+
 model Group {
   GroupID     Int           @id @default(autoincrement())
   name        String
@@ -114,6 +123,7 @@ model Group {
   creator     Profile       @relation("profile_createdgroup", fields: [createdBy], references: [id], onDelete: Cascade)
   members     GroupMember[] @relation("group_groupmember")
   consumptions Consumption[] @relation("group_consumption")
+  invitations GroupInvitation[] @relation("group_invitation")
 
   @@map("group")
 }
@@ -160,4 +170,22 @@ model ConsumptionFood {
 
   @@unique([consumptionId, foodId]) // prevents duplicate food entries in the same consumption
   @@map("consumptionfood")
+}
+
+model GroupInvitation {
+  InvitationID    Int              @id @default(autoincrement())
+  groupId         Int
+  invitedById     String           @db.Uuid // who sent the invitation
+  invitedUserId   String           @db.Uuid // who received the invitation
+  status          InvitationStatus @default(pending)
+  message         String?          // optional invitation message
+  createdAt       DateTime         @default(now())
+  respondedAt     DateTime?        // when the invitation was accepted/rejected
+  expiresAt       DateTime?        // optional expiration date
+  group           Group            @relation("group_invitation", fields: [groupId], references: [GroupID], onDelete: Cascade)
+  invitedBy       Profile          @relation("profile_sentinvitation", fields: [invitedById], references: [id], onDelete: Cascade)
+  invitedUser     Profile          @relation("profile_receivedinvitation", fields: [invitedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, invitedUserId]) // prevents duplicate invitations for same group/user
+  @@map("groupinvitation")
 }
