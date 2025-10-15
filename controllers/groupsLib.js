@@ -582,7 +582,10 @@ async function getUserInvitations(userId, status = 'pending') {
     return prisma.groupInvitation.findMany({
         where: {
             invitedUserId: userId,
-            status: status
+            status: status,
+            group: {
+                isActive: true
+            }
         },
         include: {
             group: {
@@ -615,7 +618,7 @@ async function respondToInvitation(invitationId, userId, response) {
             InvitationID: parseInt(invitationId)
         },
         include: {
-            group: true
+            group: true,
         }
     });
 
