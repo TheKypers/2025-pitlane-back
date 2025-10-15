@@ -47,7 +47,6 @@ model Food {
   dietaryRestrictions DietaryRestriction[] @relation("food_dietaryrestriction")
   preferences         Preference[]         @relation("preference_food")
   mealFoods           MealFood[]           @relation("food_mealfood")
-  consumptionFoods    ConsumptionFood[]    @relation("food_consumptionfood")
 
   @@map("food")
 }
@@ -79,6 +78,7 @@ model Meal {
   profileId   String     @db.Uuid
   profile     Profile    @relation("profile_meal", fields: [profileId], references: [id], onDelete: Cascade)
   mealFoods   MealFood[] @relation("meal_mealfood")
+  consumptionMeals ConsumptionMeal[] @relation("meal_consumptionmeal")
 
   @@map("meal")
 }
@@ -155,21 +155,21 @@ model Consumption {
   isActive        Boolean        @default(true) // for soft deletion
   profile         Profile        @relation("profile_consumption", fields: [profileId], references: [id], onDelete: Cascade)
   group           Group?         @relation("group_consumption", fields: [groupId], references: [GroupID], onDelete: SetNull)
-  consumptionFoods ConsumptionFood[] @relation("consumption_consumptionFood")
+  consumptionMeals ConsumptionMeal[] @relation("consumption_consumptionMeal")
 
   @@map("consumption")
 }
 
-model ConsumptionFood {
-  ConsumptionFoodID Int         @id @default(autoincrement())
+model ConsumptionMeal {
+  ConsumptionMealID Int         @id @default(autoincrement())
   consumptionId     Int
-  foodId            Int
-  quantity          Int         @default(1) // number of units of this food consumed
-  consumption       Consumption @relation("consumption_consumptionFood", fields: [consumptionId], references: [ConsumptionID], onDelete: Cascade)
-  food              Food        @relation("food_consumptionfood", fields: [foodId], references: [FoodID], onDelete: Cascade)
+  mealId            Int
+  quantity          Int         @default(1) // number of servings of this meal consumed
+  consumption       Consumption @relation("consumption_consumptionMeal", fields: [consumptionId], references: [ConsumptionID], onDelete: Cascade)
+  meal              Meal        @relation("meal_consumptionmeal", fields: [mealId], references: [MealID], onDelete: Cascade)
 
-  @@unique([consumptionId, foodId]) // prevents duplicate food entries in the same consumption
-  @@map("consumptionfood")
+  @@unique([consumptionId, mealId]) // prevents duplicate meal entries in the same consumption
+  @@map("consumptionmeal")
 }
 
 model GroupInvitation {

@@ -59,15 +59,15 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/individual', async (req, res) => {
     try {
-        const { name, description, foods, profileId, consumedAt } = req.body;
+        const { name, description, meals, profileId, consumedAt } = req.body;
         
-        if (!name || !profileId || !foods) {
+        if (!name || !profileId || !meals) {
             return res.status(400).json({ 
-                error: 'Name, profileId, and foods are required' 
+                error: 'Name, profileId, and meals are required' 
             });
         }
         
-        const consumptionData = { name, description, foods, consumedAt };
+        const consumptionData = { name, description, meals, consumedAt };
         const newConsumption = await consumptionsLib.createIndividualConsumption(
             consumptionData, 
             profileId
@@ -77,8 +77,8 @@ router.post('/individual', async (req, res) => {
     } catch (error) {
         console.error('Error creating individual consumption:', error);
         
-        if (error.message.includes('Foods array is required') || 
-            error.message.includes('Food with ID') || 
+        if (error.message.includes('Meals array is required') || 
+            error.message.includes('Meal with ID') || 
             error.message.includes('not found')) {
             return res.status(400).json({ error: error.message });
         }
@@ -96,15 +96,15 @@ router.post('/individual', async (req, res) => {
  */
 router.post('/group', async (req, res) => {
     try {
-        const { name, description, foods, profileId, groupId, consumedAt } = req.body;
+        const { name, description, meals, profileId, groupId, consumedAt } = req.body;
         
-        if (!name || !profileId || !groupId || !foods) {
+        if (!name || !profileId || !groupId || !meals) {
             return res.status(400).json({ 
-                error: 'Name, profileId, groupId, and foods are required' 
+                error: 'Name, profileId, groupId, and meals are required' 
             });
         }
         
-        const consumptionData = { name, description, foods, groupId, consumedAt };
+        const consumptionData = { name, description, meals, groupId, consumedAt };
         const newConsumption = await consumptionsLib.createGroupConsumption(
             consumptionData, 
             profileId
@@ -114,10 +114,10 @@ router.post('/group', async (req, res) => {
     } catch (error) {
         console.error('Error creating group consumption:', error);
         
-        if (error.message.includes('Foods array is required') || 
+        if (error.message.includes('Meals array is required') || 
             error.message.includes('Group ID is required') ||
             error.message.includes('User is not a member') ||
-            error.message.includes('Food with ID') || 
+            error.message.includes('Meal with ID') || 
             error.message.includes('not found')) {
             return res.status(400).json({ error: error.message });
         }
@@ -136,7 +136,7 @@ router.post('/group', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description, foods, profileId, consumedAt } = req.body;
+        const { name, description, meals, profileId, consumedAt } = req.body;
         
         if (!profileId) {
             return res.status(400).json({ 
@@ -144,7 +144,7 @@ router.put('/:id', async (req, res) => {
             });
         }
         
-        const consumptionData = { name, description, foods, consumedAt };
+        const consumptionData = { name, description, meals, consumedAt };
         const updatedConsumption = await consumptionsLib.updateConsumption(
             id, 
             consumptionData, 
@@ -163,7 +163,7 @@ router.put('/:id', async (req, res) => {
             return res.status(403).json({ error: error.message });
         }
         
-        if (error.message.includes('Food with ID') && error.message.includes('not found')) {
+        if (error.message.includes('Meal with ID') && error.message.includes('not found')) {
             return res.status(400).json({ error: error.message });
         }
         
@@ -237,24 +237,24 @@ router.get('/stats', async (req, res) => {
 });
 
 /**
- * GET /consumptions/groups/:groupId/filtered-foods
- * Get foods filtered by group dietary restrictions
+ * GET /consumptions/groups/:groupId/filtered-meals
+ * Get meals filtered by group dietary restrictions
  */
-router.get('/groups/:groupId/filtered-foods', async (req, res) => {
+router.get('/groups/:groupId/filtered-meals', async (req, res) => {
     try {
         const { groupId } = req.params;
-        const filteredFoods = await consumptionsLib.getGroupFilteredFoods(groupId);
+        const filteredMeals = await consumptionsLib.getGroupFilteredMeals(groupId);
         
-        res.json(filteredFoods);
+        res.json(filteredMeals);
     } catch (error) {
-        console.error('Error fetching group filtered foods:', error);
+        console.error('Error fetching group filtered meals:', error);
         
         if (error.message === 'Group not found') {
             return res.status(404).json({ error: error.message });
         }
         
         res.status(500).json({ 
-            error: 'Failed to fetch group filtered foods',
+            error: 'Failed to fetch group filtered meals',
             details: error.message 
         });
     }
