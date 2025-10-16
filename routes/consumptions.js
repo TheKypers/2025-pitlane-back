@@ -289,4 +289,30 @@ router.get('/groups/:groupId/filtered-meals', async (req, res) => {
     }
 });
 
+/**
+ * GET /consumptions/groups/:groupId/most-consumed
+ * Get the most consumed meals by a group (top 3)
+ */
+router.get('/groups/:groupId/most-consumed', async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const { limit = 3 } = req.query;
+        
+        const mostConsumedMeals = await consumptionsLib.getGroupMostConsumedMeals(groupId, parseInt(limit));
+        
+        res.json(mostConsumedMeals);
+    } catch (error) {
+        console.error('Error fetching group most consumed meals:', error);
+        
+        if (error.message === 'Group not found') {
+            return res.status(404).json({ error: error.message });
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to fetch group most consumed meals',
+            details: error.message 
+        });
+    }
+});
+
 module.exports = router;

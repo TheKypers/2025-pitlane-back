@@ -703,6 +703,123 @@ async function getGroupFilteredMeals(groupId) {
     };
 }
 
+/**
+ * Get most consumed meals by a group (top 3)
+ */
+async function getGroupMostConsumedMeals(groupId, limit = 3) {
+    // First verify the group exists and user has access
+    const groupInfo = await prisma.group.findUnique({
+        where: {
+            GroupID: parseInt(groupId),
+            isActive: true
+        },
+        include: {
+            members: {
+                where: { isActive: true },
+                select: { profileId: true }
+            }
+        }
+    });
+
+    if (!groupInfo) {
+        throw new Error('Group not found');
+    }
+
+    // Get member profile IDs
+    const memberProfileIds = groupInfo.members.map(member => member.profileId);
+
+    // Get consumptions from group members with meal information
+    const consumptions = await prisma.consumption.findMany({
+        where: {
+            profileId: { in: memberProfileIds },
+            isActive: true
+        },
+        include: {
+            consumptionMeals: {
+                include: {
+                    meal: {
+                        include: {
+                            mealFoods: {
+                                include: {
+                                    food: {
+                                        select: {
+                                            FoodID: true,
+                                            name: true,
+                                            kCal: true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            profile: {
+                select: {
+                    id: true,
+                    username: true
+                }
+            }
+        },
+        orderBy: {
+            consumedAt: 'desc'
+        }
+    });
+
+    // Count meal occurrences and calculate stats
+    const mealStats = {};
+    
+    consumptions.forEach(consumption => {
+        consumption.consumptionMeals.forEach(consumptionMeal => {
+            const meal = consumptionMeal.meal;
+            const mealKey = `${meal.name}_${meal.MealID}`;
+            
+            if (!mealStats[mealKey]) {
+                mealStats[mealKey] = {
+                    mealId: meal.MealID,
+                    name: meal.name,
+                    description: meal.description,
+                    count: 0,
+                    totalKcal: 0,
+                    foods: meal.mealFoods.map(mf => ({
+                        name: mf.food.name,
+                        kcal: mf.food.kCal,
+                        quantity: mf.quantity
+                    })),
+                    consumedBy: new Set()
+                };
+            }
+            
+            mealStats[mealKey].count += consumptionMeal.quantity || 1;
+            // Calculate kcal based on meal foods
+            const mealKcal = meal.mealFoods.reduce((total, mf) => {
+                return total + (mf.food.kCal * (mf.quantity || 1));
+            }, 0);
+            mealStats[mealKey].totalKcal += mealKcal * (consumptionMeal.quantity || 1);
+            mealStats[mealKey].consumedBy.add(consumption.profile.username);
+        });
+    });
+
+    // Convert to array, calculate averages, and sort by consumption count
+    const sortedMeals = Object.values(mealStats)
+        .map(meal => ({
+            ...meal,
+            averageKcal: meal.count > 0 ? Math.round(meal.totalKcal / meal.count) : 0,
+            consumedBy: Array.from(meal.consumedBy),
+            uniqueConsumers: meal.consumedBy.size
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, limit);
+
+    return {
+        groupId: parseInt(groupId),
+        groupName: groupInfo.name,
+        memberCount: groupInfo.members.length,
+        mostConsumedMeals: sortedMeals,
+        totalConsumptions: consumptions.length
+    };
+}
+
 module.exports = {
     getConsumptions,
     getConsumptionById,
@@ -711,5 +828,6 @@ module.exports = {
     updateConsumption,
     deleteConsumption,
     getConsumptionStats,
-    getGroupFilteredMeals
+    getGroupFilteredMeals,
+    getGroupMostConsumedMeals
 };
