@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
  * Get all consumptions with filters
  */
 async function getConsumptions(filters = {}) {
-    const { profileId, groupId, type, startDate, endDate } = filters;
+    const { profileId, groupId, type, startDate, endDate, individualOnly } = filters;
     
     let whereClause = {
         isActive: true
@@ -18,6 +18,11 @@ async function getConsumptions(filters = {}) {
 
     if (groupId) {
         whereClause.groupId = parseInt(groupId);
+    }
+
+    // If individualOnly flag is set, only get consumptions where groupId is null
+    if (individualOnly) {
+        whereClause.groupId = null;
     }
 
     if (type) {

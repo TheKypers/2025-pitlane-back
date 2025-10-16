@@ -31,6 +31,35 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /consumptions/user/:profileId
+ * Get individual consumptions for a specific user (excludes group consumptions)
+ */
+router.get('/user/:profileId', async (req, res) => {
+    try {
+        const { profileId } = req.params;
+        const { type, startDate, endDate } = req.query;
+        
+        const filters = { 
+            profileId,
+            individualOnly: true  // Add flag to indicate we only want individual consumptions
+        };
+        if (type) filters.type = type;
+        if (startDate) filters.startDate = startDate;
+        if (endDate) filters.endDate = endDate;
+        
+        const consumptions = await consumptionsLib.getConsumptions(filters);
+        
+        res.json(consumptions);
+    } catch (error) {
+        console.error('Error fetching user consumptions:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch user consumptions',
+            details: error.message 
+        });
+    }
+});
+
+/**
  * GET /consumptions/:id
  * Get a specific consumption by ID
  */
