@@ -143,9 +143,9 @@ async function getGroupById(groupId) {
                     isActive: true
                 },
                 include: {
-                    consumptionFoods: {
+                    consumptionMeals: {
                         include: {
-                            food: true
+                            meal: true
                         }
                     }
                 },

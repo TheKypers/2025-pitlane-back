@@ -252,17 +252,36 @@ async function createGroupConsumption(consumptionData, profileId) {
         throw new Error('Group ID is required for group consumption');
     }
 
-    // Verify that the user is a member of the group
-    const groupMember = await prisma.groupMember.findUnique({
+    // Verify that the user is a member of the group and get all group members
+    const groupInfo = await prisma.group.findUnique({
         where: {
-            groupId_profileId: {
-                groupId: parseInt(groupId),
-                profileId: profileId
+            GroupID: parseInt(groupId),
+            isActive: true
+        },
+        include: {
+            members: {
+                where: {
+                    isActive: true
+                },
+                include: {
+                    profile: {
+                        select: {
+                            id: true,
+                            username: true
+                        }
+                    }
+                }
             }
         }
     });
 
-    if (!groupMember || !groupMember.isActive) {
+    if (!groupInfo) {
+        throw new Error('Group not found');
+    }
+
+    // Verify that the user is a member of the group
+    const userIsMember = groupInfo.members.some(member => member.profile.id === profileId);
+    if (!userIsMember) {
         throw new Error('User is not a member of this group');
     }
 
@@ -299,57 +318,100 @@ async function createGroupConsumption(consumptionData, profileId) {
         total + (meal.kcal * meal.quantity), 0
     );
 
-    return prisma.consumption.create({
-        data: {
-            name,
-            description,
-            type: 'group',
-            profileId,
-            groupId: parseInt(groupId),
-            totalKcal,
-            consumedAt: consumedAt ? new Date(consumedAt) : new Date(),
-            consumptionMeals: {
-                create: meals.map(meal => ({
-                    mealId: meal.mealId,
-                    quantity: meal.quantity || 1
-                }))
-            }
-        },
-        include: {
-            consumptionMeals: {
-                include: {
-                    meal: {
-                        include: {
-                            mealFoods: {
-                                include: {
-                                    food: {
-                                        include: {
-                                            dietaryRestrictions: true,
-                                            preferences: true
+    // Use a transaction to create the group consumption and individual consumptions
+    const result = await prisma.$transaction(async (tx) => {
+        // Create the main group consumption record
+        const groupConsumption = await tx.consumption.create({
+            data: {
+                name,
+                description,
+                type: 'group',
+                profileId,
+                groupId: parseInt(groupId),
+                totalKcal,
+                consumedAt: consumedAt ? new Date(consumedAt) : new Date(),
+                consumptionMeals: {
+                    create: meals.map(meal => ({
+                        mealId: meal.mealId,
+                        quantity: meal.quantity || 1
+                    }))
+                }
+            },
+            include: {
+                consumptionMeals: {
+                    include: {
+                        meal: {
+                            include: {
+                                mealFoods: {
+                                    include: {
+                                        food: {
+                                            include: {
+                                                dietaryRestrictions: true,
+                                                preferences: true
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            },
-            profile: {
-                select: {
-                    id: true,
-                    username: true,
-                    role: true
-                }
-            },
-            group: {
-                select: {
-                    GroupID: true,
-                    name: true,
-                    description: true
+                },
+                profile: {
+                    select: {
+                        id: true,
+                        username: true,
+                        role: true
+                    }
+                },
+                group: {
+                    select: {
+                        GroupID: true,
+                        name: true,
+                        description: true
+                    }
                 }
             }
-        }
+        });
+
+        // Create individual consumption records for each group member
+        const individualConsumptions = await Promise.all(
+            groupInfo.members.map(async (member) => {
+                return tx.consumption.create({
+                    data: {
+                        name: `${name} (Group: ${groupInfo.name})`,
+                        description: `Individual consumption from group meal: ${description || name}`,
+                        type: 'individual',
+                        profileId: member.profile.id,
+                        totalKcal,
+                        consumedAt: consumedAt ? new Date(consumedAt) : new Date(),
+                        consumptionMeals: {
+                            create: meals.map(meal => ({
+                                mealId: meal.mealId,
+                                quantity: meal.quantity || 1
+                            }))
+                        }
+                    },
+                    include: {
+                        profile: {
+                            select: {
+                                id: true,
+                                username: true,
+                                role: true
+                            }
+                        }
+                    }
+                });
+            })
+        );
+
+        return {
+            groupConsumption,
+            individualConsumptions,
+            memberCount: groupInfo.members.length
+        };
     });
+
+    return result.groupConsumption;
 }
 
 /**
