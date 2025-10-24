@@ -379,7 +379,11 @@ async function sendGroupInvitation(groupId, invitedUserId, invitedById, message 
     });
 
     if (existingInvitation && existingInvitation.status === 'pending') {
-        throw new Error('There is already a pending invitation for this user');
+        return {
+            ...existingInvitation,
+            alreadyPending: true,
+            message: 'There is already a pending invitation for this user'
+        };
     }
 
     // Create or update invitation
@@ -760,6 +764,132 @@ async function getUserDashboardGroups(profileId, limit = 5) {
     });
 }
 
+/**
+ * Get pending invitations for a group
+ */
+async function getGroupPendingInvitations(groupId, requesterId) {
+    // Verify the requester has permission to view invitations (must be admin or creator)
+    const group = await prisma.group.findUnique({
+        where: { GroupID: parseInt(groupId) },
+        include: {
+            members: {
+                where: { isActive: true },
+                select: {
+                    profileId: true,
+                    role: true
+                }
+            }
+        }
+    });
+
+    if (!group) {
+        throw new Error('Group not found');
+    }
+
+    const isCreator = group.createdBy === requesterId;
+    const isAdmin = group.members.some(member => 
+        member.profileId === requesterId && member.role === 'admin'
+    );
+
+    if (!isCreator && !isAdmin) {
+        throw new Error('Insufficient permissions to view pending invitations');
+    }
+
+    // Get pending invitations for the group
+    return await prisma.groupInvitation.findMany({
+        where: {
+            groupId: parseInt(groupId),
+            status: 'pending'
+        },
+        include: {
+            invitedUser: {
+                select: {
+                    id: true,
+                    username: true,
+                    role: true
+                }
+            },
+            invitedBy: {
+                select: {
+                    id: true,
+                    username: true,
+                    role: true
+                }
+            }
+        },
+        orderBy: {
+            createdAt: 'desc'
+        }
+    });
+}
+
+/**
+ * Cancel a pending invitation
+ */
+async function cancelGroupInvitation(invitationId, requesterId) {
+    const invitation = await prisma.groupInvitation.findUnique({
+        where: {
+            InvitationID: parseInt(invitationId)
+        },
+        include: {
+            group: {
+                include: {
+                    members: {
+                        where: { isActive: true },
+                        select: {
+                            profileId: true,
+                            role: true
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    if (!invitation) {
+        throw new Error('Invitation not found');
+    }
+
+    if (invitation.status !== 'pending') {
+        throw new Error('Can only cancel pending invitations');
+    }
+
+    // Check permissions - must be creator, admin, or the person who sent the invitation
+    const isCreator = invitation.group.createdBy === requesterId;
+    const isAdmin = invitation.group.members.some(member => 
+        member.profileId === requesterId && member.role === 'admin'
+    );
+    const isInviter = invitation.invitedById === requesterId;
+
+    if (!isCreator && !isAdmin && !isInviter) {
+        throw new Error('Insufficient permissions to cancel this invitation');
+    }
+
+    // Delete the pending invitation from the database
+    // Return the deleted record (invited user + inviter info) for the caller
+    return await prisma.groupInvitation.delete({
+        where: {
+            InvitationID: parseInt(invitationId)
+        },
+        include: {
+            invitedUser: {
+                select: {
+                    id: true,
+                    username: true,
+                    role: true
+                }
+            },
+            invitedBy: {
+                select: {
+                    id: true,
+                    username: true,
+                    role: true
+                }
+            }
+        }
+    });
+}
+
 module.exports = {
     getAllGroups,
     getUserGroups,
@@ -774,5 +904,7 @@ module.exports = {
     getUserInvitations,
     respondToInvitation,
     searchUsers,
-    getUserDashboardGroups
+    getUserDashboardGroups,
+    getGroupPendingInvitations,
+    cancelGroupInvitation
 };

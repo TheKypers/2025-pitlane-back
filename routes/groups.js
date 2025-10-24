@@ -200,6 +200,15 @@ router.post('/:id/invite', async (req, res) => {
         
         const invitation = await groupsLib.sendGroupInvitation(id, invitedUserId, invitedById, message);
         
+        // Check if this is an already pending invitation
+        if (invitation.alreadyPending) {
+            return res.status(409).json({ 
+                error: invitation.message,
+                alreadyPending: true,
+                invitation: invitation
+            });
+        }
+        
         res.status(201).json(invitation);
     } catch (error) {
         console.error('Error sending group invitation:', error);
@@ -209,8 +218,7 @@ router.post('/:id/invite', async (req, res) => {
         }
         
         if (error.message === 'Insufficient permissions to send invitations' ||
-            error.message === 'User is already a member of this group' ||
-            error.message === 'There is already a pending invitation for this user') {
+            error.message === 'User is already a member of this group') {
             return res.status(400).json({ error: error.message });
         }
         
@@ -276,6 +284,79 @@ router.get('/:id/dietary-info', async (req, res) => {
         
         res.status(500).json({ 
             error: 'Failed to fetch group dietary info',
+            details: error.message 
+        });
+    }
+});
+
+/**
+ * GET /groups/:id/invitations
+ * Get pending invitations for a group
+ */
+router.get('/:id/invitations', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { requesterId } = req.query;
+        
+        if (!requesterId) {
+            return res.status(400).json({ 
+                error: 'Requester ID is required' 
+            });
+        }
+        
+        const invitations = await groupsLib.getGroupPendingInvitations(id, requesterId);
+        
+        res.json(invitations);
+    } catch (error) {
+        console.error('Error fetching group pending invitations:', error);
+        
+        if (error.message === 'Group not found') {
+            return res.status(404).json({ error: error.message });
+        }
+        
+        if (error.message === 'Insufficient permissions to view pending invitations') {
+            return res.status(403).json({ error: error.message });
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to fetch group pending invitations',
+            details: error.message 
+        });
+    }
+});
+
+/**
+ * DELETE /groups/invitations/:invitationId
+ * Cancel a pending invitation
+ */
+router.delete('/invitations/:invitationId', async (req, res) => {
+    try {
+        const { invitationId } = req.params;
+        const { requesterId } = req.body;
+        
+        if (!requesterId) {
+            return res.status(400).json({ 
+                error: 'Requester ID is required' 
+            });
+        }
+        
+        const cancelledInvitation = await groupsLib.cancelGroupInvitation(invitationId, requesterId);
+        
+        res.json(cancelledInvitation);
+    } catch (error) {
+        console.error('Error cancelling invitation:', error);
+        
+        if (error.message === 'Invitation not found') {
+            return res.status(404).json({ error: error.message });
+        }
+        
+        if (error.message === 'Can only cancel pending invitations' ||
+            error.message === 'Insufficient permissions to cancel this invitation') {
+            return res.status(400).json({ error: error.message });
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to cancel invitation',
             details: error.message 
         });
     }
