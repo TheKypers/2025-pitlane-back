@@ -25,29 +25,6 @@ router.get('/groups/:groupId/active', async (req, res) => {
         const { groupId } = req.params;
         const sessions = await getGroupActiveVotingSessions(groupId);
         
-        // Debug logging
-        console.log('=== GET /voting/groups/:groupId/active Debug ===');
-        console.log('Group ID:', groupId);
-        console.log('Sessions found:', sessions.length);
-        sessions.forEach((session, index) => {
-            console.log(`Session ${index + 1}:`, {
-                id: session.VotingSessionID,
-                status: session.status,
-                groupData: session.group ? {
-                    GroupID: session.group.GroupID,
-                    name: session.group.name,
-                    createdBy: session.group.createdBy,
-                    membersCount: session.group.members?.length || 0,
-                    members: session.group.members?.map(m => ({ 
-                        id: m.profile.id, 
-                        username: m.profile.username, 
-                        role: m.role 
-                    })) || []
-                } : 'NO GROUP DATA'
-            });
-        });
-        console.log('================================================');
-        
         res.json(sessions);
     } catch (error) {
         console.error('Error getting active voting sessions:', error);
@@ -289,18 +266,6 @@ router.get('/sessions/:sessionId', async (req, res) => {
     try {
         const { sessionId } = req.params;
         const session = await getVotingSession(sessionId);
-        
-        // Debug logging
-        console.log('=== GET /voting/sessions/:sessionId Debug ===');
-        console.log('Session ID:', sessionId);
-        console.log('Group Data:', JSON.stringify(session.group, null, 2));
-        console.log('Group CreatedBy:', session.group?.createdBy);
-        console.log('Group Members:', session.group?.members?.map(m => ({ 
-            id: m.profile.id, 
-            username: m.profile.username, 
-            role: m.role 
-        })));
-        console.log('============================================');
         
         res.json(session);
     } catch (error) {
