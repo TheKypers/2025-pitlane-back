@@ -32,6 +32,11 @@ model Profile {
   consumptions       Consumption[]        @relation("profile_consumption")
   sentInvitations    GroupInvitation[]    @relation("profile_sentinvitation")
   receivedInvitations GroupInvitation[]   @relation("profile_receivedinvitation")
+  initiatedVotingSessions VotingSession[] @relation("profile_votingsession")
+  mealProposals      MealProposal[]       @relation("profile_mealproposal")
+  votes              Vote[]               @relation("profile_vote")
+  proposalConfirmations UserProposalConfirmation[] @relation("profile_proposalconfirmation")
+  voteConfirmations  UserVoteConfirmation[] @relation("profile_voteconfirmation")
 
   @@map("profile")
 }
@@ -79,6 +84,8 @@ model Meal {
   profile     Profile    @relation("profile_meal", fields: [profileId], references: [id], onDelete: Cascade)
   mealFoods   MealFood[] @relation("meal_mealfood")
   consumptionMeals ConsumptionMeal[] @relation("meal_consumptionmeal")
+  votingSessionsWon VotingSession[] @relation("meal_votingsession")
+  mealProposals MealProposal[] @relation("meal_mealproposal")
 
   @@map("meal")
 }
@@ -112,6 +119,18 @@ enum InvitationStatus {
   expired
 }
 
+enum VotingSessionStatus {
+  proposal_phase    // Users can propose meals (first 5 minutes)
+  voting_phase     // Users vote on proposed meals
+  completed        // Voting finished, winner selected
+  cancelled        // Session was cancelled
+}
+
+enum VoteType {
+  up    // Vote for the meal
+  down  // Vote against the meal (optional)
+}
+
 model Group {
   GroupID     Int           @id @default(autoincrement())
   name        String
@@ -124,6 +143,7 @@ model Group {
   members     GroupMember[] @relation("group_groupmember")
   consumptions Consumption[] @relation("group_consumption")
   invitations GroupInvitation[] @relation("group_invitation")
+  votingSessions VotingSession[] @relation("group_votingsession")
 
   @@map("group")
 }
@@ -188,4 +208,87 @@ model GroupInvitation {
 
   @@unique([groupId, invitedUserId]) // prevents duplicate invitations for same group/user
   @@map("groupinvitation")
+}
+
+// Voting System Models
+model VotingSession {
+  VotingSessionID Int                  @id @default(autoincrement())
+  groupId         Int
+  initiatorId     String               @db.Uuid // who started the voting session
+  status          VotingSessionStatus  @default(proposal_phase)
+  title           String?              // optional title for the voting session
+  description     String?              // optional description
+  createdAt       DateTime             @default(now())
+  proposalEndsAt  DateTime             // when proposal phase ends (5 minutes after creation)
+  votingEndsAt    DateTime?            // when voting phase ends (set when voting starts)
+  completedAt     DateTime?            // when session was completed
+  winnerMealId    Int?                 // the winning meal (if any)
+  totalVotes      Int                  @default(0) // total number of votes cast
+  group           Group                @relation("group_votingsession", fields: [groupId], references: [GroupID], onDelete: Cascade)
+  initiator       Profile              @relation("profile_votingsession", fields: [initiatorId], references: [id], onDelete: Cascade)
+  winnerMeal      Meal?                @relation("meal_votingsession", fields: [winnerMealId], references: [MealID], onDelete: SetNull)
+  proposals       MealProposal[]       @relation("votingsession_mealproposal")
+  votes           Vote[]               @relation("votingsession_vote")
+  proposalConfirmations UserProposalConfirmation[] @relation("votingsession_proposalconfirmation")
+  voteConfirmations UserVoteConfirmation[] @relation("votingsession_voteconfirmation")
+  
+  @@map("votingsession")
+}
+
+model MealProposal {
+  MealProposalID  Int           @id @default(autoincrement())
+  votingSessionId Int
+  mealId          Int
+  proposedById    String        @db.Uuid // who proposed this meal
+  proposedAt      DateTime      @default(now())
+  voteCount       Int           @default(0) // cached vote count for performance
+  isActive        Boolean       @default(true) // for soft deletion
+  votingSession   VotingSession @relation("votingsession_mealproposal", fields: [votingSessionId], references: [VotingSessionID], onDelete: Cascade)
+  meal            Meal          @relation("meal_mealproposal", fields: [mealId], references: [MealID], onDelete: Cascade)
+  proposedBy      Profile       @relation("profile_mealproposal", fields: [proposedById], references: [id], onDelete: Cascade)
+  votes           Vote[]        @relation("mealproposal_vote")
+  
+  @@unique([votingSessionId, mealId]) // prevents duplicate meal proposals in same session
+  @@map("mealproposal")
+}
+
+model Vote {
+  VoteID          Int           @id @default(autoincrement())
+  votingSessionId Int
+  mealProposalId  Int
+  voterId         String        @db.Uuid // who cast this vote
+  voteType        VoteType      @default(up)
+  votedAt         DateTime      @default(now())
+  isActive        Boolean       @default(true) // for soft deletion (vote changes)
+  votingSession   VotingSession @relation("votingsession_vote", fields: [votingSessionId], references: [VotingSessionID], onDelete: Cascade)
+  mealProposal    MealProposal  @relation("mealproposal_vote", fields: [mealProposalId], references: [MealProposalID], onDelete: Cascade)
+  voter           Profile       @relation("profile_vote", fields: [voterId], references: [id], onDelete: Cascade)
+  
+  @@unique([mealProposalId, voterId]) // one vote per user per meal proposal
+  @@map("vote")
+}
+
+// User confirmations for voting phases
+model UserProposalConfirmation {
+  UserProposalConfirmationID Int           @id @default(autoincrement())
+  votingSessionId            Int
+  userId                     String        @db.Uuid // who confirmed they're ready for voting
+  confirmedAt                DateTime      @default(now())
+  votingSession              VotingSession @relation("votingsession_proposalconfirmation", fields: [votingSessionId], references: [VotingSessionID], onDelete: Cascade)
+  user                       Profile       @relation("profile_proposalconfirmation", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([votingSessionId, userId]) // one confirmation per user per voting session
+  @@map("userproposalconfirmation")
+}
+
+model UserVoteConfirmation {
+  UserVoteConfirmationID Int           @id @default(autoincrement())
+  votingSessionId        Int
+  userId                 String        @db.Uuid // who confirmed their votes
+  confirmedAt            DateTime      @default(now())
+  votingSession          VotingSession @relation("votingsession_voteconfirmation", fields: [votingSessionId], references: [VotingSessionID], onDelete: Cascade)
+  user                   Profile       @relation("profile_voteconfirmation", fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([votingSessionId, userId]) // one confirmation per user per voting session
+  @@map("uservoteconfirmation")
 }
