@@ -17,34 +17,6 @@ const {
 } = require('../controllers/votingLib');
 
 /**
- * GET /voting/sessions/:sessionId
- * Get voting session details
- */
-router.get('/sessions/:sessionId', async (req, res) => {
-    try {
-        const { sessionId } = req.params;
-        const session = await getVotingSession(sessionId);
-        
-        // Debug logging
-        console.log('=== GET /voting/sessions/:sessionId Debug ===');
-        console.log('Session ID:', sessionId);
-        console.log('Group Data:', JSON.stringify(session.group, null, 2));
-        console.log('Group CreatedBy:', session.group?.createdBy);
-        console.log('Group Members:', session.group?.members?.map(m => ({ 
-            id: m.profile.id, 
-            username: m.profile.username, 
-            role: m.role 
-        })));
-        console.log('============================================');
-        
-        res.json(session);
-    } catch (error) {
-        console.error('Error getting voting session:', error);
-        res.status(404).json({ error: error.message });
-    }
-});
-
-/**
  * GET /voting/groups/:groupId/active
  * Get active voting sessions for a group
  */
@@ -103,6 +75,24 @@ router.post('/sessions/start', async (req, res) => {
     } catch (error) {
         console.error('Error starting voting session:', error);
         res.status(400).json({ error: error.message });
+    }
+});
+
+/**
+ * POST /voting/check-transitions
+ * Check and auto-transition voting sessions based on time
+ * This could be called by a cron job or periodically
+ */
+router.post('/check-transitions', async (req, res) => {
+    try {
+        const results = await checkAndTransitionVotingSessions();
+        res.json({
+            message: 'Session transitions checked',
+            results
+        });
+    } catch (error) {
+        console.error('Error checking session transitions:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -290,21 +280,35 @@ router.post('/sessions/:sessionId/cleanup', async (req, res) => {
 });
 
 /**
- * POST /voting/check-transitions
- * Check and auto-transition voting sessions based on time
- * This could be called by a cron job or periodically
+ * GET /voting/sessions/:sessionId
+ * Get voting session details
+ * NOTE: This must be LAST of all /sessions/:sessionId routes to avoid matching
+ * sub-routes like /sessions/:sessionId/confirm-ready
  */
-router.post('/check-transitions', async (req, res) => {
+router.get('/sessions/:sessionId', async (req, res) => {
     try {
-        const results = await checkAndTransitionVotingSessions();
-        res.json({
-            message: 'Session transitions checked',
-            results
-        });
+        const { sessionId } = req.params;
+        const session = await getVotingSession(sessionId);
+        
+        // Debug logging
+        console.log('=== GET /voting/sessions/:sessionId Debug ===');
+        console.log('Session ID:', sessionId);
+        console.log('Group Data:', JSON.stringify(session.group, null, 2));
+        console.log('Group CreatedBy:', session.group?.createdBy);
+        console.log('Group Members:', session.group?.members?.map(m => ({ 
+            id: m.profile.id, 
+            username: m.profile.username, 
+            role: m.role 
+        })));
+        console.log('============================================');
+        
+        res.json(session);
     } catch (error) {
-        console.error('Error checking session transitions:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error getting voting session:', error);
+        res.status(404).json({ error: error.message });
     }
 });
+
+
 
 module.exports = router;

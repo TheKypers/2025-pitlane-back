@@ -618,11 +618,11 @@ async function getGroupActiveVotingSessions(groupId) {
                     GroupID: true,
                     name: true,
                     description: true,
-                    createdBy: true, // Added for ownership checks
+                    createdBy: true,
                     members: {
                         where: { isActive: true },
                         select: {
-                            role: true, // Added for admin checks
+                            role: true,
                             profile: {
                                 select: {
                                     id: true,
@@ -641,9 +641,19 @@ async function getGroupActiveVotingSessions(groupId) {
             },
             proposals: {
                 where: { isActive: true },
-                include: {
+                select: {
+                    MealProposalID: true,
+                    mealId: true,
+                    proposedById: true,
+                    proposedAt: true,
+                    voteCount: true,
+                    isActive: true,
                     meal: {
-                        include: {
+                        select: {
+                            MealID: true,
+                            name: true,
+                            description: true,
+                            profileId: true,
                             profile: {
                                 select: {
                                     id: true,
@@ -680,6 +690,26 @@ async function getGroupActiveVotingSessions(groupId) {
                                     username: true
                                 }
                             }
+                        }
+                    }
+                }
+            },
+            proposalConfirmations: {
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            username: true
+                        }
+                    }
+                }
+            },
+            voteConfirmations: {
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            username: true
                         }
                     }
                 }
@@ -817,10 +847,18 @@ async function confirmReadyForVoting(votingSessionId, userId) {
 
     // If all members have confirmed, automatically start voting phase
     if (totalConfirmations >= totalMembers) {
-        await startVotingPhase(votingSessionId);
+        const transitionResult = await startVotingPhase(votingSessionId);
+        return {
+            confirmation,
+            votingStarted: true,
+            transitionResult
+        };
     }
 
-    return confirmation;
+    return {
+        confirmation,
+        votingStarted: false
+    };
 }
 
 /**
@@ -888,10 +926,18 @@ async function confirmVotes(votingSessionId, userId) {
 
     // If all members have confirmed, automatically complete voting
     if (totalConfirmations >= totalMembers) {
-        await completeVotingSession(votingSessionId);
+        const completionResult = await completeVotingSession(votingSessionId);
+        return {
+            confirmation,
+            votingCompleted: true,
+            completionResult
+        };
     }
 
-    return confirmation;
+    return {
+        confirmation,
+        votingCompleted: false
+    };
 }
 
 /**
