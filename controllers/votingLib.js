@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const votingHistoryLib = require('./votingHistoryLib');
 
 /**
  * Start a new voting session for a group
@@ -359,6 +360,13 @@ async function castVote(votingSessionId, mealProposalId, voterId, voteType = 'up
         data: { voteCount }
     });
 
+    // Track participant for portion selection
+    try {
+        await votingHistoryLib.trackParticipant(votingSessionId, voterId);
+    } catch (error) {
+        console.error('Error tracking participant:', error);
+    }
+
     return vote;
 }
 
@@ -451,6 +459,14 @@ async function completeVotingSession(votingSessionId) {
             }
         }
     });
+
+    // Update participant deadlines (15 minutes from now)
+    try {
+        await votingHistoryLib.updateParticipantDeadlines(votingSessionId);
+        console.log(`Updated participant deadlines for session ${votingSessionId}`);
+    } catch (error) {
+        console.error(`Error updating participant deadlines:`, error);
+    }
 
     // Automatically cleanup temporary data
     setTimeout(async () => {

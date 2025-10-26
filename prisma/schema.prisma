@@ -37,6 +37,7 @@ model Profile {
   votes              Vote[]               @relation("profile_vote")
   proposalConfirmations UserProposalConfirmation[] @relation("profile_proposalconfirmation")
   voteConfirmations  UserVoteConfirmation[] @relation("profile_voteconfirmation")
+  votingParticipations VotingSessionParticipant[] @relation("profile_participant")
 
   @@map("profile")
 }
@@ -52,6 +53,7 @@ model Food {
   dietaryRestrictions DietaryRestriction[] @relation("food_dietaryrestriction")
   preferences         Preference[]         @relation("preference_food")
   mealFoods           MealFood[]           @relation("food_mealfood")
+  foodPortions        FoodPortion[]        @relation("food_foodportion")
 
   @@map("food")
 }
@@ -86,6 +88,7 @@ model Meal {
   consumptionMeals ConsumptionMeal[] @relation("meal_consumptionmeal")
   votingSessionsWon VotingSession[] @relation("meal_votingsession")
   mealProposals MealProposal[] @relation("meal_mealproposal")
+  mealPortions MealPortion[] @relation("meal_mealportion")
 
   @@map("meal")
 }
@@ -231,6 +234,7 @@ model VotingSession {
   votes           Vote[]               @relation("votingsession_vote")
   proposalConfirmations UserProposalConfirmation[] @relation("votingsession_proposalconfirmation")
   voteConfirmations UserVoteConfirmation[] @relation("votingsession_voteconfirmation")
+  participants    VotingSessionParticipant[] @relation("votingsession_participant")
   
   @@map("votingsession")
 }
@@ -291,4 +295,52 @@ model UserVoteConfirmation {
   
   @@unique([votingSessionId, userId]) // one confirmation per user per voting session
   @@map("uservoteconfirmation")
+}
+
+// Meal Portion Tracking - tracks who participated and what portion they consumed
+model VotingSessionParticipant {
+  ParticipantID       Int                        @id @default(autoincrement())
+  votingSessionId     Int
+  userId              String                     @db.Uuid
+  joinedAt            DateTime                   @default(now()) // when they joined the session
+  portionDeadline     DateTime                   // 15 minutes after session completion
+  hasSelectedPortion  Boolean                    @default(false) // whether user selected their portion
+  selectedAt          DateTime?                  // when they selected their portion
+  defaultedToWhole    Boolean                    @default(false) // true if defaulted to whole meal after deadline
+  votingSession       VotingSession              @relation("votingsession_participant", fields: [votingSessionId], references: [VotingSessionID], onDelete: Cascade)
+  user                Profile                    @relation("profile_participant", fields: [userId], references: [id], onDelete: Cascade)
+  mealPortions        MealPortion[]              @relation("participant_mealportion")
+  
+  @@unique([votingSessionId, userId]) // one participant entry per user per session
+  @@map("votingsessionparticipant")
+}
+
+// Tracks what portion of the meal each participant consumed
+model MealPortion {
+  MealPortionID    Int                        @id @default(autoincrement())
+  participantId    Int
+  mealId           Int                        // the winning meal from the voting session
+  portionFraction  Float                      @default(1.0) // 1.0 = whole, 0.5 = half, 0.25 = quarter, etc.
+  createdAt        DateTime                   @default(now())
+  foodPortions     FoodPortion[]              @relation("mealportion_foodportion")
+  participant      VotingSessionParticipant   @relation("participant_mealportion", fields: [participantId], references: [ParticipantID], onDelete: Cascade)
+  meal             Meal                       @relation("meal_mealportion", fields: [mealId], references: [MealID], onDelete: Cascade)
+  
+  @@unique([participantId, mealId]) // one meal portion per participant per meal
+  @@map("mealportion")
+}
+
+// Tracks what portion of each food/ingredient the participant consumed
+model FoodPortion {
+  FoodPortionID    Int          @id @default(autoincrement())
+  mealPortionId    Int
+  foodId           Int
+  portionFraction  Float        @default(1.0) // what fraction of this specific food they consumed
+  quantityConsumed Float        // calculated: original quantity * portionFraction
+  createdAt        DateTime     @default(now())
+  mealPortion      MealPortion  @relation("mealportion_foodportion", fields: [mealPortionId], references: [MealPortionID], onDelete: Cascade)
+  food             Food         @relation("food_foodportion", fields: [foodId], references: [FoodID], onDelete: Cascade)
+  
+  @@unique([mealPortionId, foodId]) // one food portion per meal portion per food
+  @@map("foodportion")
 }
