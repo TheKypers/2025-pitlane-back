@@ -169,14 +169,22 @@ async function getVotingSessionDetails(sessionId) {
       proposedBy: proposal.proposedBy?.username || null,
       voteCount: proposal.voteCount || 0
     })),
-    participants: session.participants.map(participant => ({
-      userId: participant.userId,
-      userName: participant.user.username,
-      hasSelectedPortion: participant.hasSelectedPortion,
-      defaultedToWhole: participant.defaultedToWhole,
-      portionFraction: participant.mealPortions[0]?.portionFraction,
-      joinedAt: participant.joinedAt
-    }))
+    participants: session.participants.map(participant => {
+      // Calculate portion deadline: 15 minutes after session completion
+      const portionDeadline = session.completedAt 
+        ? new Date(session.completedAt.getTime() + 15 * 60 * 1000)
+        : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // Far future if not completed
+
+      return {
+        userId: participant.userId,
+        userName: participant.user.username,
+        hasSelectedPortion: participant.hasSelectedPortion,
+        defaultedToWhole: participant.defaultedToWhole,
+        portionFraction: participant.mealPortions[0]?.portionFraction,
+        portionDeadline: portionDeadline.toISOString(),
+        joinedAt: participant.joinedAt
+      };
+    })
   };
 }
 
@@ -302,23 +310,33 @@ async function selectMealPortion(sessionId, userId, portionData) {
     throw new Error('No winner meal found');
   }
 
-  // Create or update meal portion
-  const mealPortion = await prisma.mealPortion.upsert({
+  // Find existing meal portion for this participant and meal
+  const existingMealPortion = await prisma.mealPortion.findFirst({
     where: {
-      participantId_mealId: {
-        participantId: participant.ParticipantID,
-        mealId: session.winnerMealId
-      }
-    },
-    update: {
-      portionFraction: parseFloat(mealPortionFraction)
-    },
-    create: {
       participantId: participant.ParticipantID,
-      mealId: session.winnerMealId,
-      portionFraction: parseFloat(mealPortionFraction)
+      mealId: session.winnerMealId
     }
   });
+
+  let mealPortion;
+  if (existingMealPortion) {
+    // Update existing meal portion
+    mealPortion = await prisma.mealPortion.update({
+      where: { MealPortionID: existingMealPortion.MealPortionID },
+      data: {
+        portionFraction: parseFloat(mealPortionFraction)
+      }
+    });
+  } else {
+    // Create new meal portion
+    mealPortion = await prisma.mealPortion.create({
+      data: {
+        participantId: participant.ParticipantID,
+        mealId: session.winnerMealId,
+        portionFraction: parseFloat(mealPortionFraction)
+      }
+    });
+  }
 
   // Delete existing food portions
   await prisma.foodPortion.deleteMany({
@@ -360,48 +378,52 @@ async function selectMealPortion(sessionId, userId, portionData) {
       const foodPortion = foodPortions.find(fp => fp.foodId === mealFood.foodId);
       const portionFraction = foodPortion ? parseFloat(foodPortion.portionFraction) : mealPortionFraction;
       const quantityConsumed = mealFood.quantity * portionFraction;
-      return sum + (mealFood.food.kCal * quantityConsumed);
+      return sum + (mealFood.food.kCal * quantityConsumed / mealFood.quantity);
     }, 0);
 
-    // Prepare food items for consumption with actual consumed quantities
-    const consumptionFoods = session.winnerMeal.mealFoods.map(mealFood => {
-      const foodPortion = foodPortions.find(fp => fp.foodId === mealFood.foodId);
-      const portionFraction = foodPortion ? parseFloat(foodPortion.portionFraction) : mealPortionFraction;
-      const quantityConsumed = mealFood.quantity * portionFraction;
-      
-      return {
-        foodId: mealFood.foodId,
-        quantity: quantityConsumed,
-        foodName: mealFood.food.name,
-        kCal: mealFood.food.kCal
-      };
-    }).filter(f => f.quantity > 0); // Only include foods with non-zero quantity
-
-    // Create consumption record
+    // Create consumption record with ConsumptionMeal linked to MealPortion
     const consumption = await prisma.consumption.create({
       data: {
         profileId: userId,
-        name: `${session.winnerMeal.name} (${Math.round(mealPortionFraction * 100)}%)`,
-        description: `From voting session - ${Math.round(mealPortionFraction * 100)}% portion`,
-        quantity: 1,
-        kCal: Math.round(totalCalories),
-        consumptionFoods: {
-          create: consumptionFoods.map(food => ({
-            foodId: food.foodId,
-            quantity: food.quantity
-          }))
+        name: `${session.winnerMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
+        description: `From voting session - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
+        type: 'individual',
+        totalKcal: Math.round(totalCalories),
+        consumptionMeals: {
+          create: {
+            mealId: session.winnerMealId,
+            mealPortionId: mealPortion.MealPortionID,
+            quantity: 1
+          }
         }
       },
       include: {
-        consumptionFoods: {
+        consumptionMeals: {
           include: {
-            food: true
+            meal: {
+              include: {
+                mealFoods: {
+                  include: {
+                    food: true
+                  }
+                }
+              }
+            },
+            mealPortion: {
+              include: {
+                foodPortions: {
+                  include: {
+                    food: true
+                  }
+                }
+              }
+            }
           }
         }
       }
     });
 
-    console.log('[Voting History] Created consumption:', consumption.ConsumptionID, 'with', totalCalories, 'kCal');
+    console.log('[Voting History] Created consumption:', consumption.ConsumptionID, 'with', totalCalories, 'kCal, linked to MealPortion:', mealPortion.MealPortionID);
   } catch (consumptionError) {
     console.error('[Voting History] Error creating consumption:', consumptionError);
     // Don't fail the whole operation if consumption creation fails

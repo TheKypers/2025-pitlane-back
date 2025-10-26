@@ -88,7 +88,15 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/individual', async (req, res) => {
     try {
-        const { name, description, meals, profileId, consumedAt } = req.body;
+        const { name, description, meals, profileId, consumedAt, portions } = req.body;
+        
+        console.log('[POST /consumptions/individual] Received request:', {
+            name,
+            profileId,
+            mealsCount: meals?.length,
+            hasPortions: !!portions,
+            portionsData: portions
+        });
         
         if (!name || !profileId || !meals) {
             return res.status(400).json({ 
@@ -96,7 +104,7 @@ router.post('/individual', async (req, res) => {
             });
         }
         
-        const consumptionData = { name, description, meals, consumedAt };
+        const consumptionData = { name, description, meals, consumedAt, portions };
         const newConsumption = await consumptionsLib.createIndividualConsumption(
             consumptionData, 
             profileId
@@ -125,7 +133,16 @@ router.post('/individual', async (req, res) => {
  */
 router.post('/group', async (req, res) => {
     try {
-        const { name, description, meals, profileId, groupId, consumedAt } = req.body;
+        const { name, description, meals, profileId, groupId, consumedAt, portions } = req.body;
+        
+        console.log('[POST /consumptions/group] Received request:', {
+            name,
+            profileId,
+            groupId,
+            mealsCount: meals?.length,
+            hasPortions: !!portions,
+            portionsData: portions
+        });
         
         if (!name || !profileId || !groupId || !meals) {
             return res.status(400).json({ 
@@ -133,7 +150,7 @@ router.post('/group', async (req, res) => {
             });
         }
         
-        const consumptionData = { name, description, meals, groupId, consumedAt };
+        const consumptionData = { name, description, meals, groupId, consumedAt, portions };
         const newConsumption = await consumptionsLib.createGroupConsumption(
             consumptionData, 
             profileId

@@ -184,12 +184,14 @@ model Consumption {
 }
 
 model ConsumptionMeal {
-  ConsumptionMealID Int         @id @default(autoincrement())
+  ConsumptionMealID Int          @id @default(autoincrement())
   consumptionId     Int
   mealId            Int
-  quantity          Int         @default(1) // number of servings of this meal consumed
-  consumption       Consumption @relation("consumption_consumptionMeal", fields: [consumptionId], references: [ConsumptionID], onDelete: Cascade)
-  meal              Meal        @relation("meal_consumptionmeal", fields: [mealId], references: [MealID], onDelete: Cascade)
+  mealPortionId     Int?         // optional link to portion details (for partial consumption)
+  quantity          Int          @default(1) // number of servings of this meal consumed
+  consumption       Consumption  @relation("consumption_consumptionMeal", fields: [consumptionId], references: [ConsumptionID], onDelete: Cascade)
+  meal              Meal         @relation("meal_consumptionmeal", fields: [mealId], references: [MealID], onDelete: Cascade)
+  mealPortion       MealPortion? @relation("consumptionmeal_mealportion", fields: [mealPortionId], references: [MealPortionID], onDelete: SetNull)
 
   @@unique([consumptionId, mealId]) // prevents duplicate meal entries in the same consumption
   @@map("consumptionmeal")
@@ -318,15 +320,15 @@ model VotingSessionParticipant {
 // Tracks what portion of the meal each participant consumed
 model MealPortion {
   MealPortionID    Int                        @id @default(autoincrement())
-  participantId    Int
-  mealId           Int                        // the winning meal from the voting session
+  participantId    Int?                       // nullable to support manual portions (not from voting)
+  mealId           Int                        // the winning meal from the voting session or manually selected meal
   portionFraction  Float                      @default(1.0) // 1.0 = whole, 0.5 = half, 0.25 = quarter, etc.
   createdAt        DateTime                   @default(now())
   foodPortions     FoodPortion[]              @relation("mealportion_foodportion")
-  participant      VotingSessionParticipant   @relation("participant_mealportion", fields: [participantId], references: [ParticipantID], onDelete: Cascade)
+  consumptionMeals ConsumptionMeal[]          @relation("consumptionmeal_mealportion") // link back to consumptions
+  participant      VotingSessionParticipant?  @relation("participant_mealportion", fields: [participantId], references: [ParticipantID], onDelete: Cascade)
   meal             Meal                       @relation("meal_mealportion", fields: [mealId], references: [MealID], onDelete: Cascade)
   
-  @@unique([participantId, mealId]) // one meal portion per participant per meal
   @@map("mealportion")
 }
 
