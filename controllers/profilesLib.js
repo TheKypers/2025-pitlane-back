@@ -159,12 +159,24 @@ const getCalorieProgress = async (userId, date = new Date()) => {
       where: { id: userId },
     });
 
-    // Obtener TODAS las consumptions del usuario con sus comidas incluidas
+    // Crear fechas de inicio y fin del día para filtrar consumptions del día específico
+    const targetDate = new Date(date);
+    const startOfDay = new Date(targetDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(targetDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // Obtener solo las consumptions del día específico
     const consumptions = await prisma.consumption.findMany({
       where: {
         profileId: userId,
         type: 'individual', // Solo consumptions individuales para el progreso personal
-        isActive: true
+        isActive: true,
+        consumedAt: {
+          gte: startOfDay,
+          lte: endOfDay
+        }
       },
       include: {
         consumptionMeals: {
@@ -217,8 +229,9 @@ const getCalorieProgress = async (userId, date = new Date()) => {
     const goal = profile?.calorie_goal || 2000;
 
     return {
-      consumed, // Total de calorías consumidas hasta ahora
-      goal      // Objetivo diario de calorías
+      consumed, // Total de calorías consumidas en el día específico
+      goal,     // Objetivo diario de calorías
+      date: targetDate.toISOString().split('T')[0] // Fecha del progreso en formato YYYY-MM-DD
     };
   } catch (error) {
     console.error('Error in getCalorieProgress:', error);
