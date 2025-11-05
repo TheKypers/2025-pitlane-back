@@ -19,8 +19,9 @@ router.get('/', authenticateJWT, async (req, res) => {
 
 // GET /profile/:id - get profile by id (protegido)
 router.get('/:id', authenticateJWT, async (req, res) => {
+ 
   try {
-    const profile = await profilesController.getProfileById(req.params.id);
+    const profile = await profilesController.getProfileById(req.params.id, req.user?.email);
     if (!profile) return res.status(404).json({ error: 'Profile not found' });
     // Devolver solo los campos requeridos
     const { id, username, role } = profile;
@@ -33,7 +34,7 @@ router.get('/:id', authenticateJWT, async (req, res) => {
 // GET /profile/:id/full - get profile by id with preferences and dietary restrictions (protegido)
 router.get('/:id/full', authenticateJWT, async (req, res) => {
   try {
-    const profile = await profilesController.getProfileById(req.params.id);
+    const profile = await profilesController.getProfileById(req.params.id, req.user?.email);
     if (!profile) return res.status(404).json({ error: 'Profile not found' });
     // Devolver todos los campos incluyendo relaciones
     res.json(profile);
@@ -307,34 +308,34 @@ router.post('/', authenticateJWT, async (req, res) => {
 });
 
 // Ruta para actualizar el objetivo de calorías
-router.put('/calorie-goal', async (req, res) => {
-  const { userId, calorieGoal } = req.body;
+router.put('/:id/calorie-goal', authenticateJWT, async (req, res) => {
+  const { calorieGoal } = req.body;
+  const userId = req.params.id;
 
-  if (!userId || !calorieGoal) {
-    return res.status(400).json({ error: 'Missing userId or calorieGoal' });
+  if (!calorieGoal) {
+    return res.status(400).json({ error: 'Missing calorieGoal' });
   }
 
   try {
     const updatedProfile = await updateCalorieGoal(userId, calorieGoal);
     res.json(updatedProfile);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update calorie goal' });
+    console.error('Error updating calorie goal:', error);
+    res.status(500).json({ error: 'Failed to update calorie goal', details: error.message });
   }
 });
 
 // Ruta para obtener el progreso de calorías
-router.get('/calorie-progress', async (req, res) => {
-  const { userId, date } = req.query;
-
-  if (!userId) {
-    return res.status(400).json({ error: 'Missing userId' });
-  }
+router.get('/:id/calorie-progress', authenticateJWT, async (req, res) => {
+  const { date } = req.query;
+  const userId = req.params.id;
 
   try {
     const progress = await getCalorieProgress(userId, date ? new Date(date) : new Date());
     res.json(progress);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch calorie progress' });
+    console.error('Error fetching calorie progress:', error);
+    res.status(500).json({ error: 'Failed to fetch calorie progress', details: error.message });
   }
 });
 

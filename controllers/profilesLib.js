@@ -8,7 +8,7 @@ async function getAllProfiles() {
     });
 }
 
-async function getProfileById(id) {
+async function getProfileById(id, userEmail = null) {
     return prisma.profile.findUnique({
         where: { id: id },
         include: { Preference: true, DietaryRestriction: true }
@@ -38,8 +38,16 @@ async function deleteProfile(id) {
     }
 }
 
+module.exports = {
+    getAllProfiles,
+    getProfileById,
+    createProfile,
+    deleteProfile
+};
+
 // PATCH: Update username by profile id
 async function updateProfileUsername(id, newUsername) {
+    console.log('✅ updateProfileUsername received id:', id, 'type:', typeof id);
     return prisma.profile.update({
         where: { id },
         data: { username: newUsername },
@@ -139,7 +147,7 @@ async function setProfileDietaryRestrictions(profileId, restrictionIds) {
 // Actualizar el objetivo de calorías
 const updateCalorieGoal = async (userId, calorieGoal) => {
   return await prisma.profile.update({
-    where: { user_id: userId },
+    where: { id: userId },
     data: { calorie_goal: calorieGoal },
   });
 };
@@ -147,7 +155,7 @@ const updateCalorieGoal = async (userId, calorieGoal) => {
 // Obtener el progreso de calorías
 const getCalorieProgress = async (userId, date = new Date()) => {
   const profile = await prisma.profile.findUnique({
-    where: { user_id: userId },
+    where: { id: userId },
   });
 
   return {
@@ -156,15 +164,18 @@ const getCalorieProgress = async (userId, date = new Date()) => {
 };
 
 module.exports = {
+  getAllProfiles,
+  getProfileById,
+  createProfile,
+  deleteProfile,
+  updateProfileUsername,
+  updateProfileRole,
+  addPreferencesToProfile,
+  removePreferencesFromProfile,
+  addDietaryRestrictionsToProfile,
+  removeDietaryRestrictionsFromProfile,
+  setProfilePreferences,
+  setProfileDietaryRestrictions,
   updateCalorieGoal,
   getCalorieProgress,
 };
-
-module.exports.updateProfileUsername = updateProfileUsername;
-module.exports.updateProfileRole = updateProfileRole;
-module.exports.addPreferencesToProfile = addPreferencesToProfile;
-module.exports.removePreferencesFromProfile = removePreferencesFromProfile;
-module.exports.addDietaryRestrictionsToProfile = addDietaryRestrictionsToProfile;
-module.exports.removeDietaryRestrictionsFromProfile = removeDietaryRestrictionsFromProfile;
-module.exports.setProfilePreferences = setProfilePreferences;
-module.exports.setProfileDietaryRestrictions = setProfileDietaryRestrictions;
