@@ -226,14 +226,6 @@ const getCalorieProgress = async (userId, date = new Date()) => {
   }
 };
 
-// Update calorie goal
-async function updateCalorieGoal(userId, calorieGoal) {
-    return prisma.profile.update({
-        where: { id: userId },
-        data: { calorie_goal: calorieGoal }
-    });
-}
-
 module.exports = {
   getAllProfiles,
   getProfileById,
