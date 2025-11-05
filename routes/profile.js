@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { updateCalorieGoal, getCalorieProgress } = require('../controllers/profilesLib');
 
 const profilesController = require('../controllers/profilesLib');
 const authenticateJWT = require('./auth');
@@ -279,8 +278,6 @@ router.put('/:id/preferences-and-restrictions', authenticateJWT, async (req, res
   }
 });
 
-module.exports = router;
-
 // DELETE /profile/:id - delete a profile by id (protegido)
 router.delete('/:id', authenticateJWT, async (req, res) => {
   try {
@@ -308,3 +305,37 @@ router.post('/', authenticateJWT, async (req, res) => {
     }
   }
 });
+
+// Ruta para actualizar el objetivo de calorías
+router.put('/calorie-goal', async (req, res) => {
+  const { userId, calorieGoal } = req.body;
+
+  if (!userId || !calorieGoal) {
+    return res.status(400).json({ error: 'Missing userId or calorieGoal' });
+  }
+
+  try {
+    const updatedProfile = await updateCalorieGoal(userId, calorieGoal);
+    res.json(updatedProfile);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update calorie goal' });
+  }
+});
+
+// Ruta para obtener el progreso de calorías
+router.get('/calorie-progress', async (req, res) => {
+  const { userId, date } = req.query;
+
+  if (!userId) {
+    return res.status(400).json({ error: 'Missing userId' });
+  }
+
+  try {
+    const progress = await getCalorieProgress(userId, date ? new Date(date) : new Date());
+    res.json(progress);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch calorie progress' });
+  }
+});
+
+module.exports = router;

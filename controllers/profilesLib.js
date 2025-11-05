@@ -1,6 +1,6 @@
 // controllers/profilesLib.js
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = new PrismaClient(); // Declaración única de prisma
 
 async function getAllProfiles() {
     return prisma.profile.findMany({
@@ -37,13 +37,6 @@ async function deleteProfile(id) {
         throw err;
     }
 }
-
-module.exports = {
-    getAllProfiles,
-    getProfileById,
-    createProfile,
-    deleteProfile
-};
 
 // PATCH: Update username by profile id
 async function updateProfileUsername(id, newUsername) {
@@ -140,6 +133,32 @@ async function setProfileDietaryRestrictions(profileId, restrictionIds) {
         include: { Preference: true, DietaryRestriction: true }
     });
 }
+
+
+// calorieGoal.js
+// Actualizar el objetivo de calorías
+const updateCalorieGoal = async (userId, calorieGoal) => {
+  return await prisma.profile.update({
+    where: { user_id: userId },
+    data: { calorie_goal: calorieGoal },
+  });
+};
+
+// Obtener el progreso de calorías
+const getCalorieProgress = async (userId, date = new Date()) => {
+  const profile = await prisma.profile.findUnique({
+    where: { user_id: userId },
+  });
+
+  return {
+    goal: profile?.calorie_goal || 2000,
+  };
+};
+
+module.exports = {
+  updateCalorieGoal,
+  getCalorieProgress,
+};
 
 module.exports.updateProfileUsername = updateProfileUsername;
 module.exports.updateProfileRole = updateProfileRole;
