@@ -23,6 +23,7 @@ model Profile {
   id                 String               @id @db.Uuid
   role               Role                 @default(user)
   username           String?              @unique
+  calorie_goal       Int?                 @default(2000) // Nuevo campo para objetivos de calorías
   Preference         Preference[]         @relation("profile_preference")
   DietaryRestriction DietaryRestriction[] @relation("profile_dietaryrestriction")
   meals              Meal[]               @relation("profile_meal")

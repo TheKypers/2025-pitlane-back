@@ -1,6 +1,6 @@
 // controllers/profilesLib.js
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = new PrismaClient(); // Declaración única de prisma
 
 async function getAllProfiles() {
     return prisma.profile.findMany({
@@ -8,7 +8,7 @@ async function getAllProfiles() {
     });
 }
 
-async function getProfileById(id) {
+async function getProfileById(id, userEmail = null) {
     return prisma.profile.findUnique({
         where: { id: id },
         include: { Preference: true, DietaryRestriction: true }
@@ -141,11 +141,117 @@ async function setProfileDietaryRestrictions(profileId, restrictionIds) {
     });
 }
 
-module.exports.updateProfileUsername = updateProfileUsername;
-module.exports.updateProfileRole = updateProfileRole;
-module.exports.addPreferencesToProfile = addPreferencesToProfile;
-module.exports.removePreferencesFromProfile = removePreferencesFromProfile;
-module.exports.addDietaryRestrictionsToProfile = addDietaryRestrictionsToProfile;
-module.exports.removeDietaryRestrictionsFromProfile = removeDietaryRestrictionsFromProfile;
-module.exports.setProfilePreferences = setProfilePreferences;
-module.exports.setProfileDietaryRestrictions = setProfileDietaryRestrictions;
+
+// calorieGoal.js
+// Actualizar el objetivo de calorías
+const updateCalorieGoal = async (userId, calorieGoal) => {
+  return await prisma.profile.update({
+    where: { id: userId },
+    data: { calorie_goal: calorieGoal },
+  });
+};
+
+// Obtener el progreso de calorías
+const getCalorieProgress = async (userId, date = new Date()) => {
+  try {
+    // Obtener perfil del usuario
+    const profile = await prisma.profile.findUnique({
+      where: { id: userId },
+    });
+
+    // Crear fechas de inicio y fin del día para filtrar consumptions del día específico
+    const targetDate = new Date(date);
+    const startOfDay = new Date(targetDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(targetDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // Obtener solo las consumptions del día específico
+    const consumptions = await prisma.consumption.findMany({
+      where: {
+        profileId: userId,
+        type: 'individual', // Solo consumptions individuales para el progreso personal
+        isActive: true,
+        consumedAt: {
+          gte: startOfDay,
+          lte: endOfDay
+        }
+      },
+      include: {
+        consumptionMeals: {
+          include: {
+            meal: {
+              include: {
+                mealFoods: {
+                  include: {
+                    food: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+
+
+    // Sumar todas las calorías de las comidas individuales dentro de cada consumption
+    const consumed = consumptions.reduce((total, consumption) => {
+      // Si no hay consumptionMeals, usar totalKcal como fallback
+      if (!consumption.consumptionMeals || consumption.consumptionMeals.length === 0) {
+        const fallbackKcal = consumption.totalKcal || 0;
+        return total + fallbackKcal;
+      }
+      
+      // Sumar kcal de cada comida en esta consumption
+      const consumptionKcal = consumption.consumptionMeals.reduce((consumptionTotal, consumptionMeal) => {
+        // Calcular kcal totales de la meal sumando las kcal de todas sus foods
+        const mealTotalKcal = consumptionMeal.meal?.mealFoods?.reduce((mealTotal, mealFood) => {
+          const foodKcal = mealFood.food?.kCal || 0;
+          const foodQuantity = mealFood.quantity || 1;
+          const foodTotalKcal = foodKcal * foodQuantity;
+          
+          return mealTotal + foodTotalKcal;
+        }, 0) || 0;
+        
+        // Multiplicar por la cantidad de porciones de la meal consumidas
+        const consumptionQuantity = consumptionMeal.quantity || 1;
+        const actualKcal = mealTotalKcal * consumptionQuantity;
+        
+        return consumptionTotal + actualKcal;
+      }, 0);
+      
+      return total + consumptionKcal;
+    }, 0);
+
+    const goal = profile?.calorie_goal || 2000;
+
+    return {
+      consumed, // Total de calorías consumidas en el día específico
+      goal,     // Objetivo diario de calorías
+      date: targetDate.toISOString().split('T')[0] // Fecha del progreso en formato YYYY-MM-DD
+    };
+  } catch (error) {
+    console.error('Error in getCalorieProgress:', error);
+    throw error;
+  }
+};
+
+module.exports = {
+  getAllProfiles,
+  getProfileById,
+  createProfile,
+  deleteProfile,
+  updateProfileUsername,
+  updateProfileRole,
+  addPreferencesToProfile,
+  removePreferencesFromProfile,
+  addDietaryRestrictionsToProfile,
+  removeDietaryRestrictionsFromProfile,
+  setProfilePreferences,
+  setProfileDietaryRestrictions,
+  updateCalorieGoal,
+  getCalorieProgress,
+};

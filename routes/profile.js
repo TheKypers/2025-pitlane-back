@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { updateCalorieGoal, getCalorieProgress } = require('../controllers/profilesLib');
 
 const profilesController = require('../controllers/profilesLib');
 const authenticateJWT = require('./auth');
@@ -20,8 +19,9 @@ router.get('/', authenticateJWT, async (req, res) => {
 
 // GET /profile/:id - get profile by id (protegido)
 router.get('/:id', authenticateJWT, async (req, res) => {
+ 
   try {
-    const profile = await profilesController.getProfileById(req.params.id);
+    const profile = await profilesController.getProfileById(req.params.id, req.user?.email);
     if (!profile) return res.status(404).json({ error: 'Profile not found' });
     // Devolver solo los campos requeridos
     const { id, username, role } = profile;
@@ -34,7 +34,7 @@ router.get('/:id', authenticateJWT, async (req, res) => {
 // GET /profile/:id/full - get profile by id with preferences and dietary restrictions (protegido)
 router.get('/:id/full', authenticateJWT, async (req, res) => {
   try {
-    const profile = await profilesController.getProfileById(req.params.id);
+    const profile = await profilesController.getProfileById(req.params.id, req.user?.email);
     if (!profile) return res.status(404).json({ error: 'Profile not found' });
     // Devolver todos los campos incluyendo relaciones
     res.json(profile);
@@ -279,8 +279,6 @@ router.put('/:id/preferences-and-restrictions', authenticateJWT, async (req, res
   }
 });
 
-module.exports = router;
-
 // DELETE /profile/:id - delete a profile by id (protegido)
 router.delete('/:id', authenticateJWT, async (req, res) => {
   try {
@@ -308,3 +306,37 @@ router.post('/', authenticateJWT, async (req, res) => {
     }
   }
 });
+
+// Ruta para actualizar el objetivo de calorías
+router.put('/:id/calorie-goal', authenticateJWT, async (req, res) => {
+  const { calorieGoal } = req.body;
+  const userId = req.params.id;
+
+  if (!calorieGoal) {
+    return res.status(400).json({ error: 'Missing calorieGoal' });
+  }
+
+  try {
+    const updatedProfile = await updateCalorieGoal(userId, calorieGoal);
+    res.json(updatedProfile);
+  } catch (error) {
+    console.error('Error updating calorie goal:', error);
+    res.status(500).json({ error: 'Failed to update calorie goal', details: error.message });
+  }
+});
+
+// Ruta para obtener el progreso de calorías
+router.get('/:id/calorie-progress', authenticateJWT, async (req, res) => {
+  const { date } = req.query;
+  const userId = req.params.id;
+
+  try {
+    const progress = await getCalorieProgress(userId, date ? new Date(date) : new Date());
+    res.json(progress);
+  } catch (error) {
+    console.error('Error fetching calorie progress:', error);
+    res.status(500).json({ error: 'Failed to fetch calorie progress', details: error.message });
+  }
+});
+
+module.exports = router;
