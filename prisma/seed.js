@@ -56,6 +56,63 @@ async function main() {
       dietaryRestrictions: { connect: [{ DietaryRestrictionID: glutenFree.DietaryRestrictionID }, { DietaryRestrictionID: lactoseFree.DietaryRestrictionID }] },
     },
   });
+
+  // Create Badges
+  console.log('Creating badges...');
+  
+  const groupCreatorBadge = await prisma.badge.upsert({
+    where: { name: 'Group Creator' },
+    update: {},
+    create: {
+      name: 'Group Creator',
+      description: 'Created your first group to share meals with friends',
+      badgeType: 'group_creation',
+      iconUrl: '🏆',
+      requirements: 'Create at least 1 group',
+      isActive: true,
+    },
+  });
+
+  const votingParticipantBadge = await prisma.badge.upsert({
+    where: { name: 'Democracy Enthusiast' },
+    update: {},
+    create: {
+      name: 'Democracy Enthusiast',
+      description: 'Participated in group meal voting sessions',
+      badgeType: 'voting_participation',
+      iconUrl: '🗳️',
+      requirements: 'Participate in at least 1 voting session',
+      isActive: true,
+    },
+  });
+
+  const votingWinnerBadge = await prisma.badge.upsert({
+    where: { name: 'Taste Maker' },
+    update: {},
+    create: {
+      name: 'Taste Maker',
+      description: 'Your meal proposals have won group voting sessions',
+      badgeType: 'voting_winner',
+      iconUrl: '🥇',
+      requirements: 'Win at least 1 voting session',
+      isActive: true,
+    },
+  });
+
+  const mealCreatorBadge = await prisma.badge.upsert({
+    where: { name: 'Chef' },
+    update: {},
+    create: {
+      name: 'Chef',
+      description: 'Created and shared meal recipes with the community',
+      badgeType: 'meal_creation',
+      iconUrl: '👨‍🍳',
+      requirements: 'Create at least 1 meal',
+      isActive: true,
+    },
+  });
+
+  console.log('Badges created successfully!');
 }
 
 main()
