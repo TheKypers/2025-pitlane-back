@@ -1,9 +1,13 @@
 const express = require('express');
 const cors = require('cors');
+const http = require('http');
 const app = express();
 const PORT = process.env.PORT || 3005;
 
 const routes = require('./routes');
+const { initializeSocketIO } = require('./config/socketConfig');
+const { initializeSocketEmitter } = require('./config/votingSocketEmitter');
+const { initializePrismaMiddleware } = require('./config/prismaClient');
 
 // Configure CORS to allow requests from the frontend
 const allowedOrigins = [
@@ -85,7 +89,23 @@ app.get('/test-cors', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+// Create HTTP server
+const httpServer = http.createServer(app);
+
+// Initialize Socket.IO
+const io = initializeSocketIO(httpServer);
+
+// Make io available to routes via app locals
+app.locals.io = io;
+
+// Initialize socket emitter for voting events
+initializeSocketEmitter(io);
+
+// Initialize Prisma middleware for database event tracking
+initializePrismaMiddleware();
+
+httpServer.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log('Environment:', process.env.NODE_ENV || 'development');
+  console.log('Socket.IO is ready for connections');
 });
