@@ -1,5 +1,6 @@
 const { prisma } = require('../config/prismaClient');
 const votingHistoryLib = require('./votingHistoryLib');
+const socketEmitter = require('../config/votingSocketEmitter');
 
 /**
  * Start a new voting session for a group
@@ -59,6 +60,13 @@ async function startVotingSession(initiatorId, groupId, title = null, descriptio
             }
         }
     });
+
+    // Emit real-time event for session creation
+    try {
+        socketEmitter.emitVotingSessionCreated(groupId, votingSession);
+    } catch (err) {
+        console.error('Error emitting voting session created:', err);
+    }
 
     return votingSession;
 }
@@ -184,6 +192,13 @@ async function proposeMeal(votingSessionId, mealId, proposedById) {
         }
     });
 
+    // Emit meal proposed event to group and session rooms
+    try {
+        socketEmitter.emitMealProposed(votingSession.VotingSessionID ? votingSession.group.GroupID || groupId : groupId, votingSession.VotingSessionID, mealProposal);
+    } catch (err) {
+        console.error('Error emitting meal proposed:', err);
+    }
+
     return mealProposal;
 }
 
@@ -256,6 +271,14 @@ async function startVotingPhase(votingSessionId) {
             }
         }
     });
+
+    // Emit voting phase started / session updated
+    try {
+        socketEmitter.emitVotingPhaseStarted(updatedSession.groupId, updatedSession.VotingSessionID, updatedSession);
+        socketEmitter.emitVotingSessionUpdated(updatedSession.groupId, updatedSession.VotingSessionID, updatedSession);
+    } catch (err) {
+        console.error('Error emitting voting phase started:', err);
+    }
 
     return updatedSession;
 }
@@ -364,6 +387,28 @@ async function castVote(votingSessionId, mealProposalId, voterId, voteType = 'up
         await votingHistoryLib.trackParticipant(votingSessionId, voterId);
     } catch (error) {
         console.error('Error tracking participant:', error);
+    }
+
+    // Fetch updated proposal to include current vote count and meal details
+    try {
+        const updatedProposal = await prisma.mealProposal.findUnique({
+            where: { MealProposalID: parseInt(mealProposalId) },
+            include: {
+                meal: {
+                    include: {
+                        mealFoods: {
+                            include: { food: true }
+                        },
+                        profile: { select: { id: true, username: true } }
+                    }
+                },
+                proposedBy: { select: { id: true, username: true } }
+            }
+        });
+
+        socketEmitter.emitVoteCast(votingSession.group.GroupID || votingSession.groupId || parseInt(votingSession.groupId), votingSessionId, vote, updatedProposal);
+    } catch (err) {
+        console.error('Error emitting vote cast:', err);
     }
 
     return vote;
@@ -476,6 +521,18 @@ async function completeVotingSession(votingSessionId) {
             console.error(`Error cleaning up voting session ${votingSessionId}:`, error);
         }
     }, 5000); // Clean up after 5 seconds
+
+    // Emit voting completed event
+    try {
+        socketEmitter.emitVotingCompleted(completedSession.groupId, votingSessionId, {
+            session: completedSession,
+            winnerProposal,
+            totalVotes,
+            winnerMealId: winnerProposal ? winnerProposal.mealId : null
+        });
+    } catch (err) {
+        console.error('Error emitting voting completed:', err);
+    }
 
     return {
         session: completedSession,
@@ -863,11 +920,25 @@ async function confirmReadyForVoting(votingSessionId, userId) {
     // If all members have confirmed, automatically start voting phase
     if (totalConfirmations >= totalMembers) {
         const transitionResult = await startVotingPhase(votingSessionId);
+        // Emit that user confirmed ready (final) and session updated
+        try {
+            socketEmitter.emitUserConfirmedReady(votingSession.groupId, votingSessionId, { userId });
+            socketEmitter.emitVotingSessionUpdated(votingSession.groupId, votingSessionId, transitionResult);
+        } catch (err) {
+            console.error('Error emitting confirmation/transition events:', err);
+        }
         return {
             confirmation,
             votingStarted: true,
             transitionResult
         };
+    }
+
+    // Emit user confirmed ready (non-final)
+    try {
+        socketEmitter.emitUserConfirmedReady(votingSession.groupId, votingSessionId, { userId });
+    } catch (err) {
+        console.error('Error emitting user confirmed ready:', err);
     }
 
     return {
@@ -942,11 +1013,26 @@ async function confirmVotes(votingSessionId, userId) {
     // If all members have confirmed, automatically complete voting
     if (totalConfirmations >= totalMembers) {
         const completionResult = await completeVotingSession(votingSessionId);
+        // Emit user confirmed votes (final) and voting completed
+        try {
+            socketEmitter.emitUserConfirmedVotes(votingSession.groupId, votingSessionId, { userId });
+            // completeVotingSession already emits voting completed, but emit session updated too
+            socketEmitter.emitVotingSessionUpdated(votingSession.groupId, votingSessionId, completionResult.session);
+        } catch (err) {
+            console.error('Error emitting vote confirmation/completion events:', err);
+        }
         return {
             confirmation,
             votingCompleted: true,
             completionResult
         };
+    }
+
+    // Emit user confirmed votes (non-final)
+    try {
+        socketEmitter.emitUserConfirmedVotes(votingSession.groupId, votingSessionId, { userId });
+    } catch (err) {
+        console.error('Error emitting user confirmed votes:', err);
     }
 
     return {
