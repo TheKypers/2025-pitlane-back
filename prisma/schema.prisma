@@ -24,6 +24,7 @@ model Profile {
   role               Role                 @default(user)
   username           String?              @unique
   calorie_goal       Int?                 @default(2000) // Nuevo campo para objetivos de calorías
+  primaryBadgeId     Int?                 // Badge seleccionado por el usuario para mostrar junto a su nombre
   Preference         Preference[]         @relation("profile_preference")
   DietaryRestriction DietaryRestriction[] @relation("profile_dietaryrestriction")
   meals              Meal[]               @relation("profile_meal")
@@ -40,6 +41,7 @@ model Profile {
   voteConfirmations  UserVoteConfirmation[] @relation("profile_voteconfirmation")
   votingParticipations VotingSessionParticipant[] @relation("profile_participant")
   userBadges       UserBadge[]      @relation("profile_userbadge")
+  primaryBadge     Badge?           @relation("profile_primarybadge", fields: [primaryBadgeId], references: [BadgeID], onDelete: SetNull)
 
   @@map("profile")
 }
@@ -370,6 +372,7 @@ model Badge {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   userBadges  UserBadge[] @relation("badge_userbadge")
+  primaryForUsers Profile[] @relation("profile_primarybadge")
 
   @@map("badge")
 }

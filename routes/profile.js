@@ -374,4 +374,51 @@ router.get('/:id/badge-stats', authenticateJWT, async (req, res) => {
   }
 });
 
+// Ruta para establecer el badge principal del usuario
+router.put('/:id/primary-badge', authenticateJWT, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { badgeId } = req.body;
+
+    // Verificar que el usuario tenga el badge que quiere establecer como principal
+    if (badgeId) {
+      const userBadges = await BadgesLibrary.getUserBadges(userId);
+      const hasBadge = userBadges.success && userBadges.data.some(badge => badge.BadgeID === badgeId);
+      
+      if (!hasBadge) {
+        return res.status(400).json({ error: 'User does not have this badge' });
+      }
+    }
+
+    // Actualizar el badge principal
+    const result = await profilesController.updatePrimaryBadge(userId, badgeId);
+    
+    if (result.success) {
+      res.json(result.data);
+    } else {
+      res.status(500).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error('Error updating primary badge:', error);
+    res.status(500).json({ error: 'Failed to update primary badge', details: error.message });
+  }
+});
+
+// Ruta para obtener el badge principal del usuario
+router.get('/:id/primary-badge', authenticateJWT, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const result = await profilesController.getPrimaryBadge(userId);
+    
+    if (result.success) {
+      res.json(result.data);
+    } else {
+      res.status(500).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error('Error fetching primary badge:', error);
+    res.status(500).json({ error: 'Failed to fetch primary badge', details: error.message });
+  }
+});
+
 module.exports = router;
