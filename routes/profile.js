@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { updateCalorieGoal, getCalorieProgress } = require('../controllers/profilesLib');
+const BadgesLibrary = require('../controllers/badgesLib');
 
 const profilesController = require('../controllers/profilesLib');
 const authenticateJWT = require('./auth');
@@ -336,6 +337,40 @@ router.get('/:id/calorie-progress', authenticateJWT, async (req, res) => {
   } catch (error) {
     console.error('Error fetching calorie progress:', error);
     res.status(500).json({ error: 'Failed to fetch calorie progress', details: error.message });
+  }
+});
+
+// Ruta para obtener las insignias del usuario
+router.get('/:id/badges', authenticateJWT, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const result = await BadgesLibrary.getUserBadges(userId);
+    
+    if (result.success) {
+      res.json(result.data);
+    } else {
+      res.status(500).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error('Error fetching user badges:', error);
+    res.status(500).json({ error: 'Failed to fetch user badges', details: error.message });
+  }
+});
+
+// Ruta para obtener estadísticas de insignias del usuario
+router.get('/:id/badge-stats', authenticateJWT, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const result = await BadgesLibrary.getUserBadgeStats(userId);
+    
+    if (result.success) {
+      res.json(result.data);
+    } else {
+      res.status(500).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error('Error fetching badge statistics:', error);
+    res.status(500).json({ error: 'Failed to fetch badge statistics', details: error.message });
   }
 });
 
