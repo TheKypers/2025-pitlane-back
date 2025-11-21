@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const groupsLib = require('../controllers/groupsLib');
+const BadgesLibrary = require('../controllers/badgesLib');
 
 /**
  * GET /groups
@@ -67,6 +68,19 @@ router.post('/', async (req, res) => {
         
         const groupData = { name, description };
         const newGroup = await groupsLib.createGroup(groupData, createdBy);
+        
+        // Award badge for creating a group
+        try {
+            const badgeResult = await BadgesLibrary.checkAndAwardBadges(createdBy, 'group_created');
+            if (badgeResult.success && badgeResult.newlyEarnedBadges.length > 0) {
+                console.log(`User ${createdBy} earned ${badgeResult.newlyEarnedBadges.length} new badge(s) for creating a group!`);
+                // You could add the badge info to the response if needed
+                newGroup.newBadges = badgeResult.newlyEarnedBadges;
+            }
+        } catch (badgeError) {
+            console.error('Error awarding group creation badge:', badgeError);
+            // Don't fail the group creation if badge awarding fails
+        }
         
         res.status(201).json(newGroup);
     } catch (error) {

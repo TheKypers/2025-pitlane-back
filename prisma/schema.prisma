@@ -24,6 +24,7 @@ model Profile {
   role               Role                 @default(user)
   username           String?              @unique
   calorie_goal       Int?                 @default(2000) // Nuevo campo para objetivos de calorías
+  primaryBadgeId     Int?                 // Badge seleccionado por el usuario para mostrar junto a su nombre
   Preference         Preference[]         @relation("profile_preference")
   DietaryRestriction DietaryRestriction[] @relation("profile_dietaryrestriction")
   meals              Meal[]               @relation("profile_meal")
@@ -39,6 +40,8 @@ model Profile {
   proposalConfirmations UserProposalConfirmation[] @relation("profile_proposalconfirmation")
   voteConfirmations  UserVoteConfirmation[] @relation("profile_voteconfirmation")
   votingParticipations VotingSessionParticipant[] @relation("profile_participant")
+  userBadges       UserBadge[]      @relation("profile_userbadge")
+  primaryBadge     Badge?           @relation("profile_primarybadge", fields: [primaryBadgeId], references: [BadgeID], onDelete: SetNull)
 
   @@map("profile")
 }
@@ -346,4 +349,45 @@ model FoodPortion {
   
   @@unique([mealPortionId, foodId]) // one food portion per meal portion per food
   @@map("foodportion")
+}
+
+// Badge System Models
+enum BadgeType {
+  group_creation     // For creating groups
+  voting_participation // For participating in voting sessions
+  voting_winner      // For winning voting sessions
+  meal_creation      // For creating/uploading meals
+  consumption_tracking // For tracking individual consumptions
+  social_engagement  // For social activities
+}
+
+model Badge {
+  BadgeID     Int         @id @default(autoincrement())
+  name        String      @unique
+  description String
+  badgeType   BadgeType
+  iconUrl     String?     // Optional URL to badge icon
+  requirements String?    // Description of how to earn the badge
+  isActive    Boolean     @default(true) // for soft deletion
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  userBadges  UserBadge[] @relation("badge_userbadge")
+  primaryForUsers Profile[] @relation("profile_primarybadge")
+
+  @@map("badge")
+}
+
+model UserBadge {
+  UserBadgeID Int      @id @default(autoincrement())
+  profileId   String   @db.Uuid
+  badgeId     Int
+  earnedAt    DateTime @default(now())
+  progress    Int      @default(0) // for badges that require multiple actions (e.g., "Create 5 groups")
+  maxProgress Int      @default(1) // maximum progress needed to earn the badge
+  isCompleted Boolean  @default(true) // whether the badge has been fully earned
+  profile     Profile  @relation("profile_userbadge", fields: [profileId], references: [id], onDelete: Cascade)
+  badge       Badge    @relation("badge_userbadge", fields: [badgeId], references: [BadgeID], onDelete: Cascade)
+
+  @@unique([profileId, badgeId]) // one badge per user
+  @@map("userbadge")
 }

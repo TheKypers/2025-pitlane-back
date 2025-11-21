@@ -129,6 +129,20 @@ router.post('/sessions/:sessionId/vote', async (req, res) => {
         }
 
         const vote = await castVote(sessionId, mealProposalId, voterId, voteType);
+        
+        // Award badge for voting participation
+        try {
+            const BadgesLibrary = require('../controllers/badgesLib');
+            const badgeResult = await BadgesLibrary.checkAndAwardBadges(voterId, 'voting_participated');
+            if (badgeResult.success && badgeResult.newlyEarnedBadges.length > 0) {
+                console.log(`User ${voterId} earned ${badgeResult.newlyEarnedBadges.length} new badge(s) for voting!`);
+                vote.newBadges = badgeResult.newlyEarnedBadges;
+            }
+        } catch (badgeError) {
+            console.error('Error awarding voting participation badge:', badgeError);
+            // Don't fail the vote if badge awarding fails
+        }
+        
         res.status(201).json(vote);
     } catch (error) {
         console.error('Error casting vote:', error);
