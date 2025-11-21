@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const votingHistoryLib = require('./votingHistoryLib');
+const BadgesLibrary = require('./badgesLib');
 
 /**
  * Start a new voting session for a group
@@ -459,6 +460,21 @@ async function completeVotingSession(votingSessionId) {
             }
         }
     });
+
+    // Award badge to winner meal creator
+    try {
+        if (completedSession.winnerMeal && completedSession.winnerMeal.profile) {
+            const winnerId = completedSession.winnerMeal.profile.id;
+            const badgeResult = await BadgesLibrary.checkAndAwardBadges(winnerId, 'voting_won');
+            if (badgeResult.success && badgeResult.newlyEarnedBadges.length > 0) {
+                console.log(`User ${winnerId} earned ${badgeResult.newlyEarnedBadges.length} new badge(s) for winning a vote!`);
+                completedSession.winnerBadges = badgeResult.newlyEarnedBadges;
+            }
+        }
+    } catch (badgeError) {
+        console.error('Error awarding voting winner badge:', badgeError);
+        // Don't fail the voting completion if badge awarding fails
+    }
 
     // Update participant deadlines (15 minutes from now)
     try {

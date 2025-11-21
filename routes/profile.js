@@ -24,6 +24,17 @@ router.get('/:id', authenticateJWT, async (req, res) => {
   try {
     const profile = await profilesController.getProfileById(req.params.id, req.user?.email);
     if (!profile) return res.status(404).json({ error: 'Profile not found' });
+    
+    // Check and award badges retroactively on first profile access
+    try {
+      console.log(`Profile accessed for user: ${req.params.id} - Running retroactive badge check`);
+      const retroactiveResult = await BadgesLibrary.checkRetroactiveBadges(req.params.id);
+      console.log('Retroactive badge result:', retroactiveResult);
+    } catch (badgeError) {
+      console.error('Error in retroactive badge check:', badgeError);
+      // Don't fail profile request if badge check fails
+    }
+    
     // Devolver solo los campos requeridos
     const { id, username, role } = profile;
     res.json({ id, username, role });
