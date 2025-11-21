@@ -72,6 +72,19 @@ function initializeSocketIO(httpServer) {
       console.log(`[Socket.IO] Socket ${socket.id} left ${roomName}`);
     });
 
+    // Handle notification broadcast request
+    socket.on('broadcast:notification', (data) => {
+      const { groupId, notification } = data;
+      if (!groupId || !notification) {
+        console.warn('[Socket.IO] Invalid notification broadcast data:', data);
+        return;
+      }
+      
+      const roomName = `group:${groupId}`;
+      console.log(`[Socket.IO] Broadcasting notification to ${roomName}:`, notification);
+      io.to(roomName).emit('notification:broadcast', notification);
+    });
+
     // Disconnection event handler
     socket.on('disconnect', (reason) => {
       console.log(`[Socket.IO] Client disconnected: ${socket.id}, reason: ${reason}`);

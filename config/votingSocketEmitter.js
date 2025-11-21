@@ -206,6 +206,34 @@ function emitUserConfirmedVotes(groupId, sessionId, confirmation) {
   io.to(sessionRoom).emit('voting:user:confirmed-votes', confirmation);
 }
 
+/**
+ * Emit a broadcast notification to all users in a group
+ * @param {number} groupId - Group ID
+ * @param {object} notification - Notification data
+ * @param {string} notification.id - Unique notification ID
+ * @param {string} notification.type - Notification type (success, error, warning, info)
+ * @param {string} notification.title - Notification title
+ * @param {string} notification.message - Notification message
+ */
+function emitGroupNotification(groupId, notification) {
+  if (!io) {
+    console.warn('[VotingSocketEmitter] Socket.IO not initialized, skipping notification emission');
+    return;
+  }
+  
+  const groupRoom = `group:${groupId}`;
+  const room = io.sockets.adapter.rooms.get(groupRoom);
+  const clientCount = room ? room.size : 0;
+  
+  console.log(`[VotingSocketEmitter] Emitting notification:broadcast to ${groupRoom} (${clientCount} clients)`, { 
+    notificationId: notification.id,
+    type: notification.type,
+    title: notification.title
+  });
+  
+  io.to(groupRoom).emit('notification:broadcast', notification);
+}
+
 module.exports = {
   initializeSocketEmitter,
   getIO,
@@ -216,5 +244,6 @@ module.exports = {
   emitVoteCast,
   emitVotingCompleted,
   emitUserConfirmedReady,
-  emitUserConfirmedVotes
+  emitUserConfirmedVotes,
+  emitGroupNotification
 };
