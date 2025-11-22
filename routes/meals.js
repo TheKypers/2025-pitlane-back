@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mealsLib = require('../controllers/mealsLib');
+const BadgesLibrary = require('../controllers/badgesLib');
 
 // GET /meals/all - Get all meals from all users with profile information
 router.get('/all', async (req, res) => {
@@ -105,6 +106,19 @@ router.post('/', async (req, res) => {
         console.log('Creating meal with data:', mealData);
         const meal = await mealsLib.createMeal(name, description, profileId, mealData);
         console.log('Meal created successfully:', meal.MealID);
+        
+        // Award badge for creating a meal
+        try {
+            const badgeResult = await BadgesLibrary.checkAndAwardBadges(profileId, 'meal_created');
+            if (badgeResult.success && badgeResult.newlyEarnedBadges.length > 0) {
+                console.log(`User ${profileId} earned ${badgeResult.newlyEarnedBadges.length} new badge(s) for creating a meal!`);
+                meal.newBadges = badgeResult.newlyEarnedBadges;
+            }
+        } catch (badgeError) {
+            console.error('Error awarding meal creation badge:', badgeError);
+            // Don't fail the meal creation if badge awarding fails
+        }
+        
         res.status(201).json(meal);
     } catch (error) {
         console.error('Error in meal creation:', error);

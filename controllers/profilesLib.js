@@ -260,6 +260,66 @@ const getCalorieProgress = async (userId, date = new Date()) => {
   }
 };
 
+// Actualizar el badge principal del usuario
+async function updatePrimaryBadge(userId, badgeId) {
+  try {
+    const updatedProfile = await prisma.profile.update({
+      where: { id: userId },
+      data: { primaryBadgeId: badgeId || null },
+      include: {
+        primaryBadge: true
+      }
+    });
+
+    return {
+      success: true,
+      data: {
+        profileId: updatedProfile.id,
+        primaryBadge: updatedProfile.primaryBadge
+      }
+    };
+  } catch (error) {
+    console.error('Error updating primary badge:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+// Obtener el badge principal del usuario
+async function getPrimaryBadge(userId) {
+  try {
+    const profile = await prisma.profile.findUnique({
+      where: { id: userId },
+      include: {
+        primaryBadge: true
+      }
+    });
+
+    if (!profile) {
+      return {
+        success: false,
+        error: 'User not found'
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        profileId: profile.id,
+        primaryBadge: profile.primaryBadge
+      }
+    };
+  } catch (error) {
+    console.error('Error fetching primary badge:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
 module.exports = {
   getAllProfiles,
   getProfileById,
@@ -275,4 +335,6 @@ module.exports = {
   setProfileDietaryRestrictions,
   updateCalorieGoal,
   getCalorieProgress,
+  updatePrimaryBadge,
+  getPrimaryBadge,
 };

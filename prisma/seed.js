@@ -37,25 +37,76 @@ async function main() {
     },
   });
 
-  // Create Foods
-  const tofu = await prisma.food.create({
-    data: {
-      name: 'Tofu',
-      svgLink: '/images/tofu.svg',
-      profileId: testProfile.id,
-      preferences: { connect: [{ PreferenceID: vegan.PreferenceID }, { PreferenceID: healthy.PreferenceID }] },
-      dietaryRestrictions: { connect: [{ DietaryRestrictionID: glutenFree.DietaryRestrictionID }] },
+  // Skip foods creation if they already exist to avoid conflicts
+
+  // Create Badges
+  console.log('Creating badges...');
+  
+  const groupCreatorBadge = await prisma.badge.upsert({
+    where: { name: 'Group Creator' },
+    update: {
+      iconUrl: null,  
+      badgeType: 'group_creation'
+    },
+    create: {
+      name: 'Group Creator',
+      description: 'Created your first group to share meals with friends',
+      badgeType: 'group_creation',
+      iconUrl: null,  
+      requirements: 'Create at least 1 group',
+      isActive: true,
     },
   });
-  const salad = await prisma.food.create({
-    data: {
-      name: 'Salad',
-      svgLink: '/images/salad.svg',
-      profileId: testProfile.id,
-      preferences: { connect: [{ PreferenceID: healthy.PreferenceID }] },
-      dietaryRestrictions: { connect: [{ DietaryRestrictionID: glutenFree.DietaryRestrictionID }, { DietaryRestrictionID: lactoseFree.DietaryRestrictionID }] },
+
+  const votingParticipantBadge = await prisma.badge.upsert({
+    where: { name: 'Democracy Enthusiast' },
+    update: {
+      iconUrl: null,  
+      badgeType: 'voting_participation'
+    },
+    create: {
+      name: 'Democracy Enthusiast',
+      description: 'Participated in group meal voting sessions',
+      badgeType: 'voting_participation',
+      iconUrl: null,  
+      requirements: 'Participate in at least 1 voting session',
+      isActive: true,
     },
   });
+
+  const votingWinnerBadge = await prisma.badge.upsert({
+    where: { name: 'Taste Maker' },
+    update: {
+      iconUrl: null,  
+      badgeType: 'voting_winner'
+    },
+    create: {
+      name: 'Taste Maker',
+      description: 'Your meal proposals have won group voting sessions',
+      badgeType: 'voting_winner',
+      iconUrl: null,  
+      requirements: 'Win at least 1 voting session',
+      isActive: true,
+    },
+  });
+
+  const mealCreatorBadge = await prisma.badge.upsert({
+    where: { name: 'Chef' },
+    update: {
+      iconUrl: null,  
+      badgeType: 'meal_creation'
+    },
+    create: {
+      name: 'Chef',
+      description: 'Created and shared meal recipes with the community',
+      badgeType: 'meal_creation',
+      iconUrl: null,  
+      requirements: 'Create at least 1 meal',
+      isActive: true,
+    },
+  });
+
+  console.log('Badges created successfully!');
 }
 
 main()
