@@ -17,10 +17,11 @@ const {
 } = require('../controllers/votingLib');
 
 /**
- * GET /voting/groups/:groupId/active
- * Get active voting sessions for a group
+ * GET /voting/groups/:groupId/initial
+ * Get active voting sessions for initial load only (not for polling)
+ * After initial load, use Socket.IO for real-time updates
  */
-router.get('/groups/:groupId/active', async (req, res) => {
+router.get('/groups/:groupId/initial', async (req, res) => {
     try {
         const { groupId } = req.params;
         const sessions = await getGroupActiveVotingSessions(groupId);
