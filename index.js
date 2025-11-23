@@ -123,9 +123,10 @@ initializeSocketEmitter(io);
 // Initialize Prisma middleware for database event tracking
 initializePrismaMiddleware();
 
-// Start voting session scheduler for automatic transitions and cleanup
-const votingLib = require('./controllers/votingLib');
-votingLib.startVotingSessionScheduler();
+// Note: Voting session scheduler not implemented yet
+// TODO: Implement startVotingSessionScheduler to call checkAndTransitionVotingSessions periodically
+// const votingLib = require('./controllers/votingLib');
+// votingLib.startVotingSessionScheduler();
 
 httpServer.listen(PORT, () => {
   console.log('='.repeat(70));
@@ -135,7 +136,6 @@ httpServer.listen(PORT, () => {
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`⏰ Time: ${new Date().toLocaleString()}`);
   console.log(`🔌 Socket.IO: Ready for connections`);
-  console.log(`⚙️  Voting Scheduler: Active (checks every 30s)`);
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
   console.log('='.repeat(70));
 });
