@@ -20,7 +20,51 @@ async function startVotingSession(initiatorId, groupId, title = null, descriptio
         throw new Error('You must be a member of this group to start a voting session');
     }
 
-    // Check if there's already an active voting session for this group
+    // First, clean up any expired sessions that weren't automatically processed
+    const now = new Date();
+    const expiredSessions = await prisma.votingSession.findMany({
+        where: {
+            groupId: parseInt(groupId),
+            status: {
+                in: ['proposal_phase', 'voting_phase']
+            },
+            OR: [
+                {
+                    status: 'proposal_phase',
+                    proposalEndsAt: {
+                        lte: now
+                    }
+                },
+                {
+                    status: 'voting_phase',
+                    votingEndsAt: {
+                        lte: now
+                    }
+                }
+            ]
+        },
+        include: {
+            proposals: { where: { isActive: true } },
+            votes: { where: { isActive: true } }
+        }
+    });
+
+    // Delete expired sessions with no activity
+    for (const expired of expiredSessions) {
+        const hasActivity = expired.status === 'proposal_phase' 
+            ? expired.proposals.length > 0 
+            : expired.votes.length > 0;
+        
+        if (!hasActivity) {
+            console.log(`[VotingLib] Cleaning up expired session ${expired.VotingSessionID} with no activity`);
+            await prisma.votingSession.delete({
+                where: { VotingSessionID: expired.VotingSessionID }
+            });
+            socketEmitter.emitVotingSessionDeleted(groupId, expired.VotingSessionID);
+        }
+    }
+
+    // Check if there's still an active voting session after cleanup
     const existingSession = await prisma.votingSession.findFirst({
         where: {
             groupId: parseInt(groupId),
@@ -693,6 +737,52 @@ async function getVotingSession(votingSessionId) {
  * Get active voting sessions for a group
  */
 async function getGroupActiveVotingSessions(groupId) {
+    const now = new Date();
+    
+    // First, clean up any expired sessions
+    const expiredSessions = await prisma.votingSession.findMany({
+        where: {
+            groupId: parseInt(groupId),
+            status: {
+                in: ['proposal_phase', 'voting_phase']
+            },
+            OR: [
+                {
+                    status: 'proposal_phase',
+                    proposalEndsAt: {
+                        lte: now
+                    }
+                },
+                {
+                    status: 'voting_phase',
+                    votingEndsAt: {
+                        lte: now
+                    }
+                }
+            ]
+        },
+        include: {
+            proposals: { where: { isActive: true } },
+            votes: { where: { isActive: true } }
+        }
+    });
+
+    // Delete expired sessions with no activity
+    for (const expired of expiredSessions) {
+        const hasActivity = expired.status === 'proposal_phase' 
+            ? expired.proposals.length > 0 
+            : expired.votes.length > 0;
+        
+        if (!hasActivity) {
+            console.log(`[VotingLib] Cleaning up expired session ${expired.VotingSessionID} from getGroupActiveVotingSessions`);
+            await prisma.votingSession.delete({
+                where: { VotingSessionID: expired.VotingSessionID }
+            });
+            socketEmitter.emitVotingSessionDeleted(groupId, expired.VotingSessionID);
+        }
+    }
+    
+    // Now fetch only truly active (not expired) sessions
     const votingSessions = await prisma.votingSession.findMany({
         where: {
             groupId: parseInt(groupId),

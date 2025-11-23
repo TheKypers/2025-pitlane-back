@@ -80,6 +80,25 @@ app.get('/', (req, res) => {
   res.send('Backend is running!');
 });
 
+// Health check endpoint with diagnostic information
+app.get('/health', (req, res) => {
+  const io = app.locals.io;
+  const socketCount = io ? io.sockets.sockets.size : 0;
+  
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    port: PORT,
+    socketIO: {
+      initialized: !!io,
+      connectedSockets: socketCount
+    },
+    uptime: process.uptime(),
+    memory: process.memoryUsage()
+  });
+});
+
 // Add a test endpoint without authentication
 app.get('/test-cors', (req, res) => {
   res.json({ 
@@ -104,8 +123,19 @@ initializeSocketEmitter(io);
 // Initialize Prisma middleware for database event tracking
 initializePrismaMiddleware();
 
+// Start voting session scheduler for automatic transitions and cleanup
+const votingLib = require('./controllers/votingLib');
+votingLib.startVotingSessionScheduler();
+
 httpServer.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log('Environment:', process.env.NODE_ENV || 'development');
-  console.log('Socket.IO is ready for connections');
+  console.log('='.repeat(70));
+  console.log('🚀 QueComemos Backend Server Started Successfully');
+  console.log('='.repeat(70));
+  console.log(`📡 Server running on port ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`⏰ Time: ${new Date().toLocaleString()}`);
+  console.log(`🔌 Socket.IO: Ready for connections`);
+  console.log(`⚙️  Voting Scheduler: Active (checks every 30s)`);
+  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+  console.log('='.repeat(70));
 });
