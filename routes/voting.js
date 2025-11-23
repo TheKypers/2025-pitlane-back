@@ -18,8 +18,7 @@ const {
 
 /**
  * GET /voting/groups/:groupId/initial
- * Get active voting sessions for initial load only (not for polling)
- * After initial load, use Socket.IO for real-time updates
+ * Get active voting sessions for initial load
  */
 router.get('/groups/:groupId/initial', async (req, res) => {
     try {
@@ -160,10 +159,6 @@ router.delete('/sessions/:sessionId/vote/:voteId', async (req, res) => {
             where: { MealProposalID: vote.mealProposalId },
             data: { voteCount }
         });
-
-        // Emit vote removed event via Socket.IO
-        const { emitVoteRemoved } = require('../config/votingSocketEmitter');
-        emitVoteRemoved(sessionId, updatedVote);
 
         res.json({ message: 'Vote removed successfully', vote: updatedVote });
     } catch (error) {

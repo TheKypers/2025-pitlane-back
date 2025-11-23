@@ -1,6 +1,5 @@
 const { prisma } = require('../config/prismaClient');
 const votingHistoryLib = require('./votingHistoryLib');
-const socketEmitter = require('../config/votingSocketEmitter');
 const BadgesLibrary = require('./badgesLib');
 
 /**
@@ -60,7 +59,7 @@ async function startVotingSession(initiatorId, groupId, title = null, descriptio
             await prisma.votingSession.delete({
                 where: { VotingSessionID: expired.VotingSessionID }
             });
-            socketEmitter.emitVotingSessionDeleted(groupId, expired.VotingSessionID);
+
         }
     }
 
@@ -108,7 +107,7 @@ async function startVotingSession(initiatorId, groupId, title = null, descriptio
 
     // Emit real-time event for session creation
     try {
-        socketEmitter.emitVotingSessionCreated(groupId, votingSession);
+
     } catch (err) {
         console.error('Error emitting voting session created:', err);
     }
@@ -239,7 +238,7 @@ async function proposeMeal(votingSessionId, mealId, proposedById) {
 
     // Emit meal proposed event to group and session rooms
     try {
-        socketEmitter.emitMealProposed(votingSession.VotingSessionID ? votingSession.group.GroupID || groupId : groupId, votingSession.VotingSessionID, mealProposal);
+
     } catch (err) {
         console.error('Error emitting meal proposed:', err);
     }
@@ -319,8 +318,8 @@ async function startVotingPhase(votingSessionId) {
 
     // Emit voting phase started / session updated
     try {
-        socketEmitter.emitVotingPhaseStarted(updatedSession.groupId, updatedSession.VotingSessionID, updatedSession);
-        socketEmitter.emitVotingSessionUpdated(updatedSession.groupId, updatedSession.VotingSessionID, updatedSession);
+
+
     } catch (err) {
         console.error('Error emitting voting phase started:', err);
     }
@@ -451,7 +450,7 @@ async function castVote(votingSessionId, mealProposalId, voterId, voteType = 'up
             }
         });
 
-        socketEmitter.emitVoteCast(votingSession.group.GroupID || votingSession.groupId || parseInt(votingSession.groupId), votingSessionId, vote, updatedProposal);
+
     } catch (err) {
         console.error('Error emitting vote cast:', err);
     }
@@ -581,18 +580,6 @@ async function completeVotingSession(votingSessionId) {
             console.error(`Error cleaning up voting session ${votingSessionId}:`, error);
         }
     }, 5000); // Clean up after 5 seconds
-
-    // Emit voting completed event
-    try {
-        socketEmitter.emitVotingCompleted(completedSession.groupId, votingSessionId, {
-            session: completedSession,
-            winnerProposal,
-            totalVotes,
-            winnerMealId: winnerProposal ? winnerProposal.mealId : null
-        });
-    } catch (err) {
-        console.error('Error emitting voting completed:', err);
-    }
 
     return {
         session: completedSession,
@@ -778,7 +765,7 @@ async function getGroupActiveVotingSessions(groupId) {
             await prisma.votingSession.delete({
                 where: { VotingSessionID: expired.VotingSessionID }
             });
-            socketEmitter.emitVotingSessionDeleted(groupId, expired.VotingSessionID);
+
         }
     }
     
@@ -1028,8 +1015,8 @@ async function confirmReadyForVoting(votingSessionId, userId) {
         const transitionResult = await startVotingPhase(votingSessionId);
         // Emit that user confirmed ready (final) and session updated
         try {
-            socketEmitter.emitUserConfirmedReady(votingSession.groupId, votingSessionId, { userId });
-            socketEmitter.emitVotingSessionUpdated(votingSession.groupId, votingSessionId, transitionResult);
+
+
         } catch (err) {
             console.error('Error emitting confirmation/transition events:', err);
         }
@@ -1042,7 +1029,7 @@ async function confirmReadyForVoting(votingSessionId, userId) {
 
     // Emit user confirmed ready (non-final)
     try {
-        socketEmitter.emitUserConfirmedReady(votingSession.groupId, votingSessionId, { userId });
+
     } catch (err) {
         console.error('Error emitting user confirmed ready:', err);
     }
@@ -1121,9 +1108,9 @@ async function confirmVotes(votingSessionId, userId) {
         const completionResult = await completeVotingSession(votingSessionId);
         // Emit user confirmed votes (final) and voting completed
         try {
-            socketEmitter.emitUserConfirmedVotes(votingSession.groupId, votingSessionId, { userId });
+
             // completeVotingSession already emits voting completed, but emit session updated too
-            socketEmitter.emitVotingSessionUpdated(votingSession.groupId, votingSessionId, completionResult.session);
+
         } catch (err) {
             console.error('Error emitting vote confirmation/completion events:', err);
         }
@@ -1136,7 +1123,7 @@ async function confirmVotes(votingSessionId, userId) {
 
     // Emit user confirmed votes (non-final)
     try {
-        socketEmitter.emitUserConfirmedVotes(votingSession.groupId, votingSessionId, { userId });
+
     } catch (err) {
         console.error('Error emitting user confirmed votes:', err);
     }
@@ -1378,6 +1365,37 @@ async function createGroupConsumptionFromVote(votingSessionId, consumptionData) 
     return consumption;
 }
 
+/**
+ * Start the voting session scheduler
+ * Checks every minute for sessions that need to transition
+ */
+function startVotingSessionScheduler() {
+    console.log('🔄 Starting voting session scheduler...');
+    
+    // Run immediately on startup
+    checkAndTransitionVotingSessions()
+        .then(results => {
+            if (results.length > 0) {
+                console.log(`✅ Initial check: ${results.length} session(s) transitioned`);
+            }
+        })
+        .catch(err => console.error('❌ Error in initial scheduler check:', err));
+    
+    // Then run every 60 seconds
+    setInterval(async () => {
+        try {
+            const results = await checkAndTransitionVotingSessions();
+            if (results.length > 0) {
+                console.log(`🔄 Scheduler: ${results.length} session(s) transitioned`);
+            }
+        } catch (error) {
+            console.error('❌ Error in voting session scheduler:', error);
+        }
+    }, 60000); // 60 seconds
+    
+    console.log('✅ Voting session scheduler started (checks every 60 seconds)');
+}
+
 module.exports = {
     startVotingSession,
     proposeMeal,
@@ -1387,6 +1405,7 @@ module.exports = {
     getVotingSession,
     getGroupActiveVotingSessions,
     checkAndTransitionVotingSessions,
+    startVotingSessionScheduler,
     createGroupConsumptionFromVote,
     confirmReadyForVoting,
     confirmVotes,

@@ -5,8 +5,6 @@ const app = express();
 const PORT = process.env.PORT || 3005;
 
 const routes = require('./routes');
-const { initializeSocketIO } = require('./config/socketConfig');
-const { initializeSocketEmitter } = require('./config/votingSocketEmitter');
 const { initializePrismaMiddleware } = require('./config/prismaClient');
 
 // Configure CORS to allow requests from the frontend
@@ -82,18 +80,11 @@ app.get('/', (req, res) => {
 
 // Health check endpoint with diagnostic information
 app.get('/health', (req, res) => {
-  const io = app.locals.io;
-  const socketCount = io ? io.sockets.sockets.size : 0;
-  
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
     port: PORT,
-    socketIO: {
-      initialized: !!io,
-      connectedSockets: socketCount
-    },
     uptime: process.uptime(),
     memory: process.memoryUsage()
   });
@@ -111,41 +102,10 @@ app.get('/test-cors', (req, res) => {
 // Create HTTP server
 const httpServer = http.createServer(app);
 
-// Initialize Socket.IO (but it won't work properly on Vercel serverless)
-let io = null;
-if (!process.env.VERCEL) {
-  io = initializeSocketIO(httpServer);
-  app.locals.io = io;
-  initializeSocketEmitter(io);
-  console.log('✅ Socket.IO initialized for traditional server');
-} else {
-  console.warn('⚠️  Socket.IO disabled on Vercel (not supported on serverless)');
-  console.warn('⚠️  Using REST API polling instead');
-  // Create a mock io object to prevent crashes
-  app.locals.io = {
-    to: () => ({ emit: () => {} }),
-    sockets: { sockets: new Map() }
-  };
-}
-
-// Initialize Prisma middleware for database event tracking
-initializePrismaMiddleware();
-
-// Warn about Vercel limitations
-if (process.env.VERCEL) {
-  console.warn('⚠️  WARNING: Running on Vercel serverless environment');
-  console.warn('⚠️  Socket.IO real-time features will be limited');
-  console.warn('⚠️  Consider using polling-based approach or external service');
-}
-
-// Start voting session scheduler (works on traditional servers, limited on serverless)
+// Start voting session scheduler
 const votingLib = require('./controllers/votingLib');
-if (!process.env.VERCEL) {
-  votingLib.startVotingSessionScheduler();
-  console.log('✅ Voting session scheduler started');
-} else {
-  console.warn('⚠️  Voting session scheduler disabled on Vercel (use API-triggered checks instead)');
-}
+votingLib.startVotingSessionScheduler();
+console.log('✅ Voting session scheduler started');
 
 httpServer.listen(PORT, () => {
   console.log('='.repeat(70));
@@ -154,8 +114,7 @@ httpServer.listen(PORT, () => {
   console.log(`📡 Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`⏰ Time: ${new Date().toLocaleString()}`);
-  console.log(`🔌 Socket.IO: ${process.env.VERCEL ? 'Limited (Vercel)' : 'Ready for connections'}`);
-  console.log(`⚙️  Voting Scheduler: ${process.env.VERCEL ? 'Disabled (Vercel)' : 'Active'}`);
+  console.log(`⚙️  Voting Scheduler: Active`);
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
   console.log('='.repeat(70));
 });
