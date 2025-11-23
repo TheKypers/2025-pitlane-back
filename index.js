@@ -111,14 +111,22 @@ app.get('/test-cors', (req, res) => {
 // Create HTTP server
 const httpServer = http.createServer(app);
 
-// Initialize Socket.IO
-const io = initializeSocketIO(httpServer);
-
-// Make io available to routes via app locals
-app.locals.io = io;
-
-// Initialize socket emitter for voting events
-initializeSocketEmitter(io);
+// Initialize Socket.IO (but it won't work properly on Vercel serverless)
+let io = null;
+if (!process.env.VERCEL) {
+  io = initializeSocketIO(httpServer);
+  app.locals.io = io;
+  initializeSocketEmitter(io);
+  console.log('✅ Socket.IO initialized for traditional server');
+} else {
+  console.warn('⚠️  Socket.IO disabled on Vercel (not supported on serverless)');
+  console.warn('⚠️  Using REST API polling instead');
+  // Create a mock io object to prevent crashes
+  app.locals.io = {
+    to: () => ({ emit: () => {} }),
+    sockets: { sockets: new Map() }
+  };
+}
 
 // Initialize Prisma middleware for database event tracking
 initializePrismaMiddleware();
