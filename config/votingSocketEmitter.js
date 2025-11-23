@@ -234,6 +234,56 @@ function emitGroupNotification(groupId, notification) {
   io.to(groupRoom).emit('notification:broadcast', notification);
 }
 
+/**
+ * Emit event when a voting session is deleted
+ * @param {number} groupId - Group ID
+ * @param {number} sessionId - Voting session ID
+ */
+function emitVotingSessionDeleted(groupId, sessionId) {
+  if (!io) {
+    console.warn('[VotingSocketEmitter] Socket.IO not initialized, skipping event emission');
+    return;
+  }
+  
+  console.log(`📡 Emitting voting:session:deleted for group ${groupId}, session ${sessionId}`);
+  io.to(`group:${groupId}`).emit('voting:session:deleted', { sessionId });
+}
+
+/**
+ * Emit event when a voting session is completed
+ * @param {number} groupId - Group ID
+ * @param {number} sessionId - Voting session ID
+ * @param {object} session - Completed session data
+ */
+function emitVotingSessionCompleted(groupId, sessionId, session) {
+  if (!io) {
+    console.warn('[VotingSocketEmitter] Socket.IO not initialized, skipping event emission');
+    return;
+  }
+  
+  const groupRoom = `group:${groupId}`;
+  const sessionRoom = `voting-session:${sessionId}`;
+  
+  console.log(`[VotingSocketEmitter] Emitting voting:session:completed to ${groupRoom} and ${sessionRoom}`, { sessionId });
+  io.to(groupRoom).emit('voting:session:completed', session);
+  io.to(sessionRoom).emit('voting:session:completed', session);
+}
+
+/**
+ * Emit event when a vote is removed
+ * @param {number} sessionId - Voting session ID
+ * @param {object} vote - Removed vote data
+ */
+function emitVoteRemoved(sessionId, vote) {
+  if (!io) {
+    console.warn('[VotingSocketEmitter] Socket.IO not initialized, skipping event emission');
+    return;
+  }
+  
+  console.log(`📡 Emitting voting:vote:removed for session ${sessionId}`);
+  io.to(`session:${sessionId}`).emit('voting:vote:removed', vote);
+}
+
 module.exports = {
   initializeSocketEmitter,
   getIO,
@@ -245,5 +295,8 @@ module.exports = {
   emitVotingCompleted,
   emitUserConfirmedReady,
   emitUserConfirmedVotes,
-  emitGroupNotification
+  emitGroupNotification,
+  emitVotingSessionDeleted,
+  emitVotingSessionCompleted,
+  emitVoteRemoved
 };

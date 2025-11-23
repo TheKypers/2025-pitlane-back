@@ -114,6 +114,65 @@ router.post('/sessions/:sessionId/start-voting', async (req, res) => {
 });
 
 /**
+ * DELETE /voting/sessions/:sessionId/vote/:voteId
+ * Remove a vote
+ */
+router.delete('/sessions/:sessionId/vote/:voteId', async (req, res) => {
+    try {
+        const { sessionId, voteId } = req.params;
+
+        // Get the vote to check session status
+        const vote = await require('../config/prismaClient').vote.findUnique({
+            where: { VoteID: parseInt(voteId) },
+            include: {
+                votingSession: true
+            }
+        });
+
+        if (!vote) {
+            return res.status(404).json({ error: 'Vote not found' });
+        }
+
+        if (vote.votingSessionId !== parseInt(sessionId)) {
+            return res.status(400).json({ error: 'Vote does not belong to this session' });
+        }
+
+        if (vote.votingSession.status !== 'voting_phase') {
+            return res.status(400).json({ error: 'Cannot remove vote - voting is not active' });
+        }
+
+        // Soft delete the vote
+        const updatedVote = await require('../config/prismaClient').vote.update({
+            where: { VoteID: parseInt(voteId) },
+            data: { isActive: false }
+        });
+
+        // Update vote count on meal proposal
+        const voteCount = await require('../config/prismaClient').vote.count({
+            where: {
+                mealProposalId: vote.mealProposalId,
+                voteType: 'up',
+                isActive: true
+            }
+        });
+
+        await require('../config/prismaClient').mealProposal.update({
+            where: { MealProposalID: vote.mealProposalId },
+            data: { voteCount }
+        });
+
+        // Emit vote removed event via Socket.IO
+        const { emitVoteRemoved } = require('../config/votingSocketEmitter');
+        emitVoteRemoved(sessionId, updatedVote);
+
+        res.json({ message: 'Vote removed successfully', vote: updatedVote });
+    } catch (error) {
+        console.error('Error removing vote:', error);
+        res.status(400).json({ error: error.message });
+    }
+});
+
+/**
  * POST /voting/sessions/:sessionId/vote
  * Cast a vote for a meal proposal
  * Body: { mealProposalId, voterId, voteType? }
