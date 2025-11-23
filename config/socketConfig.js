@@ -9,6 +9,14 @@ function initializeSocketIO(httpServer) {
   console.log('[Socket.IO] Initializing Socket.IO server');
   console.log('[Socket.IO] Environment:', process.env.NODE_ENV || 'development');
   
+  // Vercel doesn't support WebSocket for serverless functions
+  // Use polling-only in production, or if VERCEL environment variable is set
+  const isVercel = !!process.env.VERCEL || process.env.NODE_ENV === 'production';
+  const transports = isVercel ? ['polling'] : ['websocket', 'polling'];
+  
+  console.log('[Socket.IO] Running on Vercel:', isVercel);
+  console.log('[Socket.IO] Available transports:', transports);
+  
   const io = new Server(httpServer, {
     cors: {
       origin: function (origin, callback) {
@@ -45,7 +53,7 @@ function initializeSocketIO(httpServer) {
       methods: ['GET', 'POST'],
       credentials: true
     },
-    transports: ['websocket', 'polling'],
+    transports: transports,
     pingTimeout: 60000,
     pingInterval: 25000,
     allowEIO3: true,

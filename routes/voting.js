@@ -272,6 +272,30 @@ router.post('/sessions/:sessionId/cleanup', async (req, res) => {
 });
 
 /**
+ * POST /voting/sessions/check-transitions
+ * Manually trigger session transitions check (useful for serverless environments)
+ * This endpoint can be called periodically to ensure expired sessions are handled
+ */
+router.post('/sessions/check-transitions', async (req, res) => {
+    try {
+        console.log('[VotingAPI] Manual transition check triggered');
+        const results = await checkAndTransitionVotingSessions();
+        
+        res.json({
+            success: true,
+            processedCount: results.length,
+            results: results
+        });
+    } catch (error) {
+        console.error('Error checking session transitions:', error);
+        res.status(500).json({ 
+            error: 'Failed to check session transitions',
+            details: error.message 
+        });
+    }
+});
+
+/**
  * GET /voting/sessions/:sessionId
  * Get voting session details
  * NOTE: This must be LAST of all /sessions/:sessionId routes to avoid matching

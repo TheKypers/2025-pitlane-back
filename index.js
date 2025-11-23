@@ -123,10 +123,21 @@ initializeSocketEmitter(io);
 // Initialize Prisma middleware for database event tracking
 initializePrismaMiddleware();
 
-// Note: Voting session scheduler not implemented yet
-// TODO: Implement startVotingSessionScheduler to call checkAndTransitionVotingSessions periodically
-// const votingLib = require('./controllers/votingLib');
-// votingLib.startVotingSessionScheduler();
+// Warn about Vercel limitations
+if (process.env.VERCEL) {
+  console.warn('⚠️  WARNING: Running on Vercel serverless environment');
+  console.warn('⚠️  Socket.IO real-time features will be limited');
+  console.warn('⚠️  Consider using polling-based approach or external service');
+}
+
+// Start voting session scheduler (works on traditional servers, limited on serverless)
+const votingLib = require('./controllers/votingLib');
+if (!process.env.VERCEL) {
+  votingLib.startVotingSessionScheduler();
+  console.log('✅ Voting session scheduler started');
+} else {
+  console.warn('⚠️  Voting session scheduler disabled on Vercel (use API-triggered checks instead)');
+}
 
 httpServer.listen(PORT, () => {
   console.log('='.repeat(70));
@@ -135,7 +146,8 @@ httpServer.listen(PORT, () => {
   console.log(`📡 Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`⏰ Time: ${new Date().toLocaleString()}`);
-  console.log(`🔌 Socket.IO: Ready for connections`);
+  console.log(`🔌 Socket.IO: ${process.env.VERCEL ? 'Limited (Vercel)' : 'Ready for connections'}`);
+  console.log(`⚙️  Voting Scheduler: ${process.env.VERCEL ? 'Disabled (Vercel)' : 'Active'}`);
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
   console.log('='.repeat(70));
 });
