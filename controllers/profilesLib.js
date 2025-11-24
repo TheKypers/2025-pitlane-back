@@ -271,7 +271,7 @@ async function updatePrimaryBadge(userId, badgeId) {
       }
     });
 
-    // If user has a primary badge, get their level for that badge
+    // If user has a primary badge, get their leve  l for that badge
     let badgeData = updatedProfile.primaryBadge;
     if (badgeData) {
       const userBadge = await prisma.userBadge.findFirst({
