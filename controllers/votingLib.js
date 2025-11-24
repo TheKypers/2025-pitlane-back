@@ -482,6 +482,12 @@ async function completeVotingSession(votingSessionId) {
                                 }
                             }
                         }
+                    },
+                    proposedBy: {
+                        select: {
+                            id: true,
+                            username: true
+                        }
                     }
                 }
             }
@@ -548,13 +554,30 @@ async function completeVotingSession(votingSessionId) {
         }
     });
 
-    // Award badge to winner meal creator
+    // Award badge to the user who proposed the winning meal (Taste Maker achievement)
     try {
-        if (completedSession.winnerMeal && completedSession.winnerMeal.profile) {
-            const winnerId = completedSession.winnerMeal.profile.id;
+        // Find the winning proposal to get the proposer
+        const winningProposal = await prisma.mealProposal.findFirst({
+            where: {
+                votingSessionId: parseInt(votingSessionId),
+                mealId: winnerProposal.mealId,
+                isActive: true
+            },
+            include: {
+                proposedBy: {
+                    select: {
+                        id: true,
+                        username: true
+                    }
+                }
+            }
+        });
+
+        if (winningProposal && winningProposal.proposedBy) {
+            const winnerId = winningProposal.proposedBy.id;
             const badgeResult = await BadgesLibrary.checkAndAwardBadges(winnerId, 'voting_won');
             if (badgeResult.success && badgeResult.newlyEarnedBadges.length > 0) {
-                console.log(`User ${winnerId} earned ${badgeResult.newlyEarnedBadges.length} new badge(s) for winning a vote!`);
+                console.log(`User ${winnerId} (${winningProposal.proposedBy.username}) earned ${badgeResult.newlyEarnedBadges.length} new badge(s) for their meal proposal winning the vote!`);
                 completedSession.winnerBadges = badgeResult.newlyEarnedBadges;
             }
         }

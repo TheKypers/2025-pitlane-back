@@ -107,19 +107,29 @@ router.post('/', async (req, res) => {
         const meal = await mealsLib.createMeal(name, description, profileId, mealData);
         console.log('Meal created successfully:', meal.MealID);
         
+        // Create response object with meal data
+        const response = {
+            ...meal,
+            badgeNotifications: []
+        };
+        
         // Award badge for creating a meal
         try {
             const badgeResult = await BadgesLibrary.checkAndAwardBadges(profileId, 'meal_created');
-            if (badgeResult.success && badgeResult.newlyEarnedBadges.length > 0) {
-                console.log(`User ${profileId} earned ${badgeResult.newlyEarnedBadges.length} new badge(s) for creating a meal!`);
-                meal.newBadges = badgeResult.newlyEarnedBadges;
+            console.log('[Meals] Badge check result:', JSON.stringify(badgeResult, null, 2));
+            if (badgeResult.success && badgeResult.badgeNotifications && badgeResult.badgeNotifications.length > 0) {
+                console.log(`User ${profileId} earned ${badgeResult.badgeNotifications.length} badge achievement(s) for creating a meal!`);
+                response.badgeNotifications = badgeResult.badgeNotifications;
+            } else {
+                console.log('[Meals] No badge notifications to add');
             }
         } catch (badgeError) {
             console.error('Error awarding meal creation badge:', badgeError);
             // Don't fail the meal creation if badge awarding fails
         }
         
-        res.status(201).json(meal);
+        console.log('[Meals] Final response:', { mealId: response.MealID, hasBadgeNotifications: response.badgeNotifications?.length > 0 });
+        res.status(201).json(response);
     } catch (error) {
         console.error('Error in meal creation:', error);
         res.status(500).json({ error: error.message });

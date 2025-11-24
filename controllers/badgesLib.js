@@ -16,16 +16,19 @@ class BadgesLibrary {
     }
   }
 
-  // Get user badges with badge details
+  // Get user badges with badge details (including level information)
   static async getUserBadges(profileId) {
     try {
       const userBadges = await prisma.userBadge.findMany({
         where: { 
-          profileId: profileId,
-          isCompleted: true 
+          profileId: profileId
         },
         include: {
-          badge: true
+          badge: {
+            include: {
+              requirements: true
+            }
+          }
         },
         orderBy: { earnedAt: 'desc' }
       });
@@ -34,9 +37,12 @@ class BadgesLibrary {
         success: true, 
         data: userBadges.map(ub => ({
           ...ub.badge,
+          currentLevel: ub.currentLevel,
           earnedAt: ub.earnedAt,
+          lastUpgraded: ub.lastUpgraded,
           progress: ub.progress,
-          maxProgress: ub.maxProgress
+          isCompleted: ub.isCompleted,
+          requirements: ub.badge.requirements
         }))
       };
     } catch (error) {
@@ -49,22 +55,57 @@ class BadgesLibrary {
   static async getUserBadgeProgress(profileId) {
     try {
       const allBadges = await prisma.badge.findMany({
-        where: { isActive: true }
+        where: { isActive: true },
+        include: {
+          requirements: {
+            orderBy: { requiredCount: 'asc' }
+          }
+        }
       });
 
       const userBadges = await prisma.userBadge.findMany({
         where: { profileId: profileId },
-        include: { badge: true }
+        include: { 
+          badge: {
+            include: {
+              requirements: {
+                orderBy: { requiredCount: 'asc' }
+              }
+            }
+          }
+        }
       });
 
       const badgeProgress = allBadges.map(badge => {
         const userBadge = userBadges.find(ub => ub.badgeId === badge.BadgeID);
+        
+        // Get requirements for current and next level
+        let currentLevelReq = null;
+        let nextLevelReq = null;
+        
+        if (userBadge) {
+          currentLevelReq = badge.requirements.find(r => r.level === userBadge.currentLevel);
+          const levelOrder = ['bronze', 'silver', 'gold', 'diamond'];
+          const currentIndex = levelOrder.indexOf(userBadge.currentLevel);
+          if (currentIndex < levelOrder.length - 1) {
+            const nextLevel = levelOrder[currentIndex + 1];
+            nextLevelReq = badge.requirements.find(r => r.level === nextLevel);
+          }
+        } else {
+          // User doesn't have badge yet, show bronze requirement
+          currentLevelReq = badge.requirements.find(r => r.level === 'bronze');
+        }
+
         return {
           badge,
+          currentLevel: userBadge ? userBadge.currentLevel : null,
           progress: userBadge ? userBadge.progress : 0,
-          maxProgress: userBadge ? userBadge.maxProgress : 1,
           isCompleted: userBadge ? userBadge.isCompleted : false,
-          earnedAt: userBadge ? userBadge.earnedAt : null
+          earnedAt: userBadge ? userBadge.earnedAt : null,
+          lastUpgraded: userBadge ? userBadge.lastUpgraded : null,
+          currentLevelRequirement: currentLevelReq,
+          nextLevelRequirement: nextLevelReq,
+          hasEarned: !!userBadge
         };
       });
 
@@ -75,12 +116,25 @@ class BadgesLibrary {
     }
   }
 
-  // Award a badge to a user
-  static async awardBadge(profileId, badgeId, progress = 1) {
+  // Get next badge level
+  static getNextLevel(currentLevel) {
+    const levelOrder = ['bronze', 'silver', 'gold', 'diamond'];
+    const currentIndex = levelOrder.indexOf(currentLevel);
+    if (currentIndex === -1 || currentIndex === levelOrder.length - 1) return null;
+    return levelOrder[currentIndex + 1];
+  }
+
+  // Award or upgrade a badge for a user
+  static async awardBadge(profileId, badgeId, incrementProgress = 1) {
     try {
-      // Check if badge exists
+      // Check if badge exists and get all requirements
       const badge = await prisma.badge.findUnique({
-        where: { BadgeID: badgeId, isActive: true }
+        where: { BadgeID: badgeId, isActive: true },
+        include: {
+          requirements: {
+            orderBy: { requiredCount: 'asc' }
+          }
+        }
       });
 
       if (!badge) {
@@ -94,21 +148,38 @@ class BadgesLibrary {
             profileId: profileId, 
             badgeId: badgeId 
           }
-        }
+        },
+        include: { badge: true }
       });
 
-      if (existingUserBadge) {
-        // Update progress if not completed
-        if (!existingUserBadge.isCompleted) {
-          const newProgress = Math.min(existingUserBadge.progress + progress, existingUserBadge.maxProgress);
-          const isCompleted = newProgress >= existingUserBadge.maxProgress;
+      const newProgress = existingUserBadge ? existingUserBadge.progress + incrementProgress : incrementProgress;
 
+      if (existingUserBadge) {
+        // Check if we can upgrade to a higher level
+        const nextLevel = this.getNextLevel(existingUserBadge.currentLevel);
+        
+        if (!nextLevel) {
+          // Already at max level (diamond)
+          return { 
+            success: true, 
+            data: existingUserBadge, 
+            alreadyMaxLevel: true,
+            progress: newProgress
+          };
+        }
+
+        const nextLevelRequirement = badge.requirements.find(r => r.level === nextLevel);
+        
+        if (nextLevelRequirement && newProgress >= nextLevelRequirement.requiredCount) {
+          // Upgrade to next level
+          const isMaxLevel = nextLevel === 'diamond';
           const updatedUserBadge = await prisma.userBadge.update({
             where: { UserBadgeID: existingUserBadge.UserBadgeID },
             data: { 
+              currentLevel: nextLevel,
               progress: newProgress,
-              isCompleted: isCompleted,
-              earnedAt: isCompleted ? new Date() : existingUserBadge.earnedAt
+              lastUpgraded: new Date(),
+              isCompleted: isMaxLevel
             },
             include: { badge: true }
           });
@@ -116,22 +187,46 @@ class BadgesLibrary {
           return { 
             success: true, 
             data: updatedUserBadge,
-            newlyCompleted: isCompleted && !existingUserBadge.isCompleted
+            leveledUp: true,
+            oldLevel: existingUserBadge.currentLevel,
+            newLevel: nextLevel,
+            progress: newProgress
           };
         } else {
-          return { success: true, data: existingUserBadge, alreadyCompleted: true };
+          // Just update progress, no level up
+          const updatedUserBadge = await prisma.userBadge.update({
+            where: { UserBadgeID: existingUserBadge.UserBadgeID },
+            data: { 
+              progress: newProgress
+            },
+            include: { badge: true }
+          });
+
+          return { 
+            success: true, 
+            data: updatedUserBadge,
+            progressUpdated: true,
+            progress: newProgress
+          };
         }
       } else {
-        // Create new user badge
-        const isCompleted = progress >= 1;
+        // Create new user badge at bronze level
+        const bronzeRequirement = badge.requirements.find(r => r.level === 'bronze');
+        
+        if (!bronzeRequirement) {
+          return { success: false, error: 'Bronze level requirement not found' };
+        }
+
+        const hasEarnedBronze = newProgress >= bronzeRequirement.requiredCount;
+
         const userBadge = await prisma.userBadge.create({
           data: {
             profileId: profileId,
             badgeId: badgeId,
-            progress: progress,
-            maxProgress: 1,
-            isCompleted: isCompleted,
-            earnedAt: isCompleted ? new Date() : undefined
+            currentLevel: 'bronze',
+            progress: newProgress,
+            isCompleted: false, // Never completed on first award
+            earnedAt: hasEarnedBronze ? new Date() : undefined
           },
           include: { badge: true }
         });
@@ -139,7 +234,9 @@ class BadgesLibrary {
         return { 
           success: true, 
           data: userBadge,
-          newlyCompleted: isCompleted
+          newlyEarned: hasEarnedBronze,
+          newLevel: 'bronze',
+          progress: newProgress
         };
       }
     } catch (error) {
@@ -159,7 +256,7 @@ class BadgesLibrary {
             where: { badgeType: 'group_creation', isActive: true }
           });
           if (groupCreatorBadge) {
-            const result = await this.awardBadge(profileId, groupCreatorBadge.BadgeID);
+            const result = await this.awardBadge(profileId, groupCreatorBadge.BadgeID, 1);
             results.push(result);
           }
           break;
@@ -169,7 +266,7 @@ class BadgesLibrary {
             where: { badgeType: 'meal_creation', isActive: true }
           });
           if (mealCreatorBadge) {
-            const result = await this.awardBadge(profileId, mealCreatorBadge.BadgeID);
+            const result = await this.awardBadge(profileId, mealCreatorBadge.BadgeID, 1);
             results.push(result);
           }
           break;
@@ -179,7 +276,7 @@ class BadgesLibrary {
             where: { badgeType: 'voting_participation', isActive: true }
           });
           if (votingParticipantBadge) {
-            const result = await this.awardBadge(profileId, votingParticipantBadge.BadgeID);
+            const result = await this.awardBadge(profileId, votingParticipantBadge.BadgeID, 1);
             results.push(result);
           }
           break;
@@ -189,7 +286,7 @@ class BadgesLibrary {
             where: { badgeType: 'voting_winner', isActive: true }
           });
           if (votingWinnerBadge) {
-            const result = await this.awardBadge(profileId, votingWinnerBadge.BadgeID);
+            const result = await this.awardBadge(profileId, votingWinnerBadge.BadgeID, 1);
             results.push(result);
           }
           break;
@@ -198,14 +295,21 @@ class BadgesLibrary {
           console.warn(`Unknown badge action: ${action}`);
       }
 
-      // Filter successful results that are newly completed
-      const newlyEarnedBadges = results
-        .filter(r => r.success && r.newlyCompleted)
-        .map(r => r.data.badge);
+      // Filter results for newly earned or leveled up badges
+      const badgeNotifications = results
+        .filter(r => r.success && (r.newlyEarned || r.leveledUp))
+        .map(r => ({
+          badge: r.data.badge,
+          level: r.newLevel || r.data.currentLevel,
+          isNewBadge: r.newlyEarned,
+          isLevelUp: r.leveledUp,
+          oldLevel: r.oldLevel,
+          progress: r.progress
+        }));
 
       return {
         success: true,
-        newlyEarnedBadges,
+        badgeNotifications,
         allResults: results
       };
 
@@ -218,25 +322,39 @@ class BadgesLibrary {
   // Get badge statistics for a user
   static async getUserBadgeStats(profileId) {
     try {
-      const totalBadges = await prisma.badge.count({
-        where: { isActive: true }
-      });
-
-      const earnedBadges = await prisma.userBadge.count({
-        where: { 
-          profileId: profileId,
-          isCompleted: true
+      const allBadges = await prisma.badge.findMany({
+        where: { isActive: true },
+        include: {
+          requirements: true
         }
       });
 
+      // Count total unique badge types
+      const totalBadges = allBadges.length;
+
+      // Count how many badge types user has earned (at any level)
+      const earnedBadges = await prisma.userBadge.count({
+        where: { 
+          profileId: profileId
+        }
+      });
+
+      // Get recent badges or level ups
       const recentBadges = await prisma.userBadge.findMany({
         where: { 
-          profileId: profileId,
-          isCompleted: true
+          profileId: profileId
         },
         include: { badge: true },
-        orderBy: { earnedAt: 'desc' },
+        orderBy: { lastUpgraded: 'desc' },
         take: 3
+      });
+
+      // Count how many badges are at max level (diamond)
+      const diamondBadges = await prisma.userBadge.count({
+        where: {
+          profileId: profileId,
+          currentLevel: 'diamond'
+        }
       });
 
       return {
@@ -244,10 +362,14 @@ class BadgesLibrary {
         data: {
           totalBadges,
           earnedBadges,
+          diamondBadges,
           completionPercentage: totalBadges > 0 ? Math.round((earnedBadges / totalBadges) * 100) : 0,
           recentBadges: recentBadges.map(ub => ({
             ...ub.badge,
-            earnedAt: ub.earnedAt
+            currentLevel: ub.currentLevel,
+            earnedAt: ub.earnedAt,
+            lastUpgraded: ub.lastUpgraded,
+            progress: ub.progress
           }))
         }
       };
@@ -257,7 +379,7 @@ class BadgesLibrary {
     }
   }
 
-  // Check retroactive badges automatically (only once per user)
+  // Check retroactive badges automatically with proper progress count
   static async checkRetroactiveBadges(profileId) {
     try {
       console.log(`Starting retroactive check for user: ${profileId}`);
@@ -278,7 +400,7 @@ class BadgesLibrary {
       console.log(`Running automatic retroactive badge check for user: ${profileId}`);
       const results = [];
 
-      // Check for group creation badge
+      // Check for group creation badge - count and award based on actual count
       const groupsCreated = await prisma.group.count({
         where: { 
           createdBy: profileId,
@@ -286,8 +408,13 @@ class BadgesLibrary {
         }
       });
       if (groupsCreated > 0) {
-        const groupBadgeResult = await this.checkAndAwardBadges(profileId, 'group_created');
-        results.push({ action: 'group_created', count: groupsCreated, result: groupBadgeResult });
+        const groupBadge = await prisma.badge.findFirst({
+          where: { badgeType: 'group_creation', isActive: true }
+        });
+        if (groupBadge) {
+          const result = await this.awardBadge(profileId, groupBadge.BadgeID, groupsCreated);
+          results.push({ action: 'group_created', count: groupsCreated, result });
+        }
       }
 
       // Check for meal creation badge
@@ -295,20 +422,29 @@ class BadgesLibrary {
         where: { profileId: profileId }
       });
       if (mealsCreated > 0) {
-        const mealBadgeResult = await this.checkAndAwardBadges(profileId, 'meal_created');
-        results.push({ action: 'meal_created', count: mealsCreated, result: mealBadgeResult });
+        const mealBadge = await prisma.badge.findFirst({
+          where: { badgeType: 'meal_creation', isActive: true }
+        });
+        if (mealBadge) {
+          const result = await this.awardBadge(profileId, mealBadge.BadgeID, mealsCreated);
+          results.push({ action: 'meal_created', count: mealsCreated, result });
+        }
       }
 
       // Check for voting participation badge
-      const votesParticipated = await prisma.vote.count({
+      const votesParticipated = await prisma.votingSessionParticipant.count({
         where: { 
-          voterId: profileId,
-          isActive: true
+          userId: profileId
         }
       });
       if (votesParticipated > 0) {
-        const votingBadgeResult = await this.checkAndAwardBadges(profileId, 'voting_participated');
-        results.push({ action: 'voting_participated', count: votesParticipated, result: votingBadgeResult });
+        const votingBadge = await prisma.badge.findFirst({
+          where: { badgeType: 'voting_participation', isActive: true }
+        });
+        if (votingBadge) {
+          const result = await this.awardBadge(profileId, votingBadge.BadgeID, votesParticipated);
+          results.push({ action: 'voting_participated', count: votesParticipated, result });
+        }
       }
 
       // Check for voting winner badge
@@ -320,22 +456,33 @@ class BadgesLibrary {
         }
       });
       if (votingSessions > 0) {
-        const winnerBadgeResult = await this.checkAndAwardBadges(profileId, 'voting_won');
-        results.push({ action: 'voting_won', count: votingSessions, result: winnerBadgeResult });
+        const winnerBadge = await prisma.badge.findFirst({
+          where: { badgeType: 'voting_winner', isActive: true }
+        });
+        if (winnerBadge) {
+          const result = await this.awardBadge(profileId, winnerBadge.BadgeID, votingSessions);
+          results.push({ action: 'voting_won', count: votingSessions, result });
+        }
       }
 
-      // Collect newly earned badges
-      const allNewlyEarnedBadges = results
-        .filter(r => r.result.success && r.result.newlyEarnedBadges && r.result.newlyEarnedBadges.length > 0)
-        .flatMap(r => r.result.newlyEarnedBadges);
+      // Collect notifications for newly earned or leveled up badges
+      const badgeNotifications = results
+        .filter(r => r.result.success && (r.result.newlyEarned || r.result.leveledUp))
+        .map(r => ({
+          badge: r.result.data.badge,
+          level: r.result.newLevel || r.result.data.currentLevel,
+          isNewBadge: r.result.newlyEarned,
+          isLevelUp: r.result.leveledUp,
+          count: r.count
+        }));
 
-      if (allNewlyEarnedBadges.length > 0) {
-        console.log(`User ${profileId} automatically earned ${allNewlyEarnedBadges.length} retroactive badge(s)!`);
+      if (badgeNotifications.length > 0) {
+        console.log(`User ${profileId} automatically earned ${badgeNotifications.length} retroactive badge(s) or level(s)!`);
       }
 
       return {
         success: true,
-        newlyEarnedBadges: allNewlyEarnedBadges,
+        badgeNotifications,
         summary: { groupsCreated, mealsCreated, votesParticipated, votingSessionsWon: votingSessions }
       };
 

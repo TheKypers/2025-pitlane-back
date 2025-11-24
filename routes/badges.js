@@ -141,10 +141,10 @@ router.post('/check', async (req, res) => {
     
     if (result.success) {
       res.json({
-        message: result.newlyEarnedBadges.length > 0 ? 
-                 `Congratulations! You earned ${result.newlyEarnedBadges.length} new badge(s)!` : 
+        message: result.badgeNotifications.length > 0 ? 
+                 `Congratulations! You earned ${result.badgeNotifications.length} badge achievement(s)!` : 
                  'No new badges earned',
-        newlyEarnedBadges: result.newlyEarnedBadges,
+        badgeNotifications: result.badgeNotifications,
         totalResults: result.allResults.length
       });
     } else {
@@ -233,16 +233,16 @@ router.post('/award-retroactive/:profileId', async (req, res) => {
 
     await prisma.$disconnect();
 
-    // Collect all newly earned badges
-    const allNewlyEarnedBadges = results
-      .filter(r => r.result.success && r.result.newlyEarnedBadges && r.result.newlyEarnedBadges.length > 0)
-      .flatMap(r => r.result.newlyEarnedBadges);
+    // Collect all badge notifications
+    const allBadgeNotifications = results
+      .filter(r => r.result.success && r.result.badgeNotifications && r.result.badgeNotifications.length > 0)
+      .flatMap(r => r.result.badgeNotifications);
 
     res.json({
-      message: allNewlyEarnedBadges.length > 0 ? 
-               `Congratulations! You earned ${allNewlyEarnedBadges.length} badge(s) for your past activities!` :
+      message: allBadgeNotifications.length > 0 ? 
+               `Congratulations! You earned ${allBadgeNotifications.length} badge achievement(s) for your past activities!` :
                'No new badges earned from past activities',
-      newlyEarnedBadges: allNewlyEarnedBadges,
+      badgeNotifications: allBadgeNotifications,
       details: results,
       summary: {
         groupsCreated,

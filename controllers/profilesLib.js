@@ -304,11 +304,29 @@ async function getPrimaryBadge(userId) {
       };
     }
 
+    // If user has a primary badge, get their level for that badge
+    let badgeData = profile.primaryBadge;
+    if (badgeData) {
+      const userBadge = await prisma.userBadge.findFirst({
+        where: {
+          profileId: userId,
+          badgeId: badgeData.BadgeID
+        }
+      });
+      
+      if (userBadge) {
+        badgeData = {
+          ...badgeData,
+          currentLevel: userBadge.currentLevel
+        };
+      }
+    }
+
     return {
       success: true,
       data: {
         profileId: profile.id,
-        primaryBadge: profile.primaryBadge
+        primaryBadge: badgeData
       }
     };
   } catch (error) {
@@ -318,6 +336,22 @@ async function getPrimaryBadge(userId) {
       error: error.message
     };
   }
+}
+
+// Set both preferences and dietary restrictions for a profile
+async function setProfilePreferencesAndRestrictions(id, preferences = [], dietaryRestrictions = []) {
+  return prisma.profile.update({
+    where: { id },
+    data: {
+      Preference: {
+        set: preferences.map(PreferenceID => ({ PreferenceID }))
+      },
+      DietaryRestriction: {
+        set: dietaryRestrictions.map(DietaryRestrictionID => ({ DietaryRestrictionID }))
+      }
+    },
+    include: { Preference: true, DietaryRestriction: true }
+  });
 }
 
 module.exports = {
@@ -333,6 +367,7 @@ module.exports = {
   removeDietaryRestrictionsFromProfile,
   setProfilePreferences,
   setProfileDietaryRestrictions,
+  setProfilePreferencesAndRestrictions,
   updateCalorieGoal,
   getCalorieProgress,
   updatePrimaryBadge,

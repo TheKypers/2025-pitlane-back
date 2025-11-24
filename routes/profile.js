@@ -263,19 +263,11 @@ router.put('/:id/preferences-and-restrictions', authenticateJWT, async (req, res
       return res.status(400).json({ error: 'Preferences and dietaryRestrictions must be arrays' });
     }
     
-    // Update both preferences and dietary restrictions in a single transaction
-    const updated = await prisma.profile.update({
-      where: { id: req.params.id },
-      data: {
-        Preference: {
-          set: preferences.map(PreferenceID => ({ PreferenceID }))
-        },
-        DietaryRestriction: {
-          set: dietaryRestrictions.map(DietaryRestrictionID => ({ DietaryRestrictionID }))
-        }
-      },
-      include: { Preference: true, DietaryRestriction: true }
-    });
+    const updated = await profilesController.setProfilePreferencesAndRestrictions(
+      req.params.id, 
+      preferences, 
+      dietaryRestrictions
+    );
     
     const { id, username, role } = updated;
     res.json({ id, username, role });

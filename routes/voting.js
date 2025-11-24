@@ -185,20 +185,30 @@ router.post('/sessions/:sessionId/vote', async (req, res) => {
 
         const vote = await castVote(sessionId, mealProposalId, voterId, voteType);
         
+        // Create response object with vote data
+        const response = {
+            ...vote,
+            badgeNotifications: []
+        };
+        
         // Award badge for voting participation
         try {
             const BadgesLibrary = require('../controllers/badgesLib');
             const badgeResult = await BadgesLibrary.checkAndAwardBadges(voterId, 'voting_participated');
-            if (badgeResult.success && badgeResult.newlyEarnedBadges.length > 0) {
-                console.log(`User ${voterId} earned ${badgeResult.newlyEarnedBadges.length} new badge(s) for voting!`);
-                vote.newBadges = badgeResult.newlyEarnedBadges;
+            console.log('[Voting] Badge check result:', JSON.stringify(badgeResult, null, 2));
+            if (badgeResult.success && badgeResult.badgeNotifications && badgeResult.badgeNotifications.length > 0) {
+                console.log(`User ${voterId} earned ${badgeResult.badgeNotifications.length} badge achievement(s) for voting!`);
+                response.badgeNotifications = badgeResult.badgeNotifications;
+            } else {
+                console.log('[Voting] No badge notifications to add');
             }
         } catch (badgeError) {
             console.error('Error awarding voting participation badge:', badgeError);
             // Don't fail the vote if badge awarding fails
         }
         
-        res.status(201).json(vote);
+        console.log('[Voting] Final response:', { voteId: response.VoteID, hasBadgeNotifications: response.badgeNotifications?.length > 0 });
+        res.status(201).json(response);
     } catch (error) {
         console.error('Error casting vote:', error);
         res.status(400).json({ error: error.message });

@@ -53,7 +53,6 @@ async function main() {
       description: 'Created your first group to share meals with friends',
       badgeType: 'group_creation',
       iconUrl: null,  
-      requirements: 'Create at least 1 group',
       isActive: true,
     },
   });
@@ -69,7 +68,6 @@ async function main() {
       description: 'Participated in group meal voting sessions',
       badgeType: 'voting_participation',
       iconUrl: null,  
-      requirements: 'Participate in at least 1 voting session',
       isActive: true,
     },
   });
@@ -85,7 +83,6 @@ async function main() {
       description: 'Your meal proposals have won group voting sessions',
       badgeType: 'voting_winner',
       iconUrl: null,  
-      requirements: 'Win at least 1 voting session',
       isActive: true,
     },
   });
@@ -101,12 +98,47 @@ async function main() {
       description: 'Created and shared meal recipes with the community',
       badgeType: 'meal_creation',
       iconUrl: null,  
-      requirements: 'Create at least 1 meal',
       isActive: true,
     },
   });
 
   console.log('Badges created successfully!');
+
+  // Create Badge Requirements (Bronze: 1, Silver: 10, Gold: 50, Diamond: 100)
+  console.log('Creating badge requirements...');
+
+  const badges = [groupCreatorBadge, votingParticipantBadge, votingWinnerBadge, mealCreatorBadge];
+  const levels = [
+    { level: 'bronze', count: 1, desc: 'Complete 1 action' },
+    { level: 'silver', count: 10, desc: 'Complete 10 actions' },
+    { level: 'gold', count: 50, desc: 'Complete 50 actions' },
+    { level: 'diamond', count: 100, desc: 'Complete 100 actions' }
+  ];
+
+  for (const badge of badges) {
+    for (const { level, count, desc } of levels) {
+      await prisma.badgeRequirement.upsert({
+        where: {
+          badgeId_level: {
+            badgeId: badge.BadgeID,
+            level: level
+          }
+        },
+        update: {
+          requiredCount: count,
+          description: desc
+        },
+        create: {
+          badgeId: badge.BadgeID,
+          level: level,
+          requiredCount: count,
+          description: desc
+        }
+      });
+    }
+  }
+
+  console.log('Badge requirements created successfully!');
 }
 
 main()

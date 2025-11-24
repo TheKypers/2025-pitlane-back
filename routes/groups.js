@@ -69,20 +69,29 @@ router.post('/', async (req, res) => {
         const groupData = { name, description };
         const newGroup = await groupsLib.createGroup(groupData, createdBy);
         
+        // Create response object with group data
+        const response = {
+            ...newGroup,
+            badgeNotifications: []
+        };
+        
         // Award badge for creating a group
         try {
             const badgeResult = await BadgesLibrary.checkAndAwardBadges(createdBy, 'group_created');
-            if (badgeResult.success && badgeResult.newlyEarnedBadges.length > 0) {
-                console.log(`User ${createdBy} earned ${badgeResult.newlyEarnedBadges.length} new badge(s) for creating a group!`);
-                // You could add the badge info to the response if needed
-                newGroup.newBadges = badgeResult.newlyEarnedBadges;
+            console.log('[Groups] Badge check result:', JSON.stringify(badgeResult, null, 2));
+            if (badgeResult.success && badgeResult.badgeNotifications && badgeResult.badgeNotifications.length > 0) {
+                console.log(`User ${createdBy} earned ${badgeResult.badgeNotifications.length} badge achievement(s) for creating a group!`);
+                response.badgeNotifications = badgeResult.badgeNotifications;
+            } else {
+                console.log('[Groups] No badge notifications to add');
             }
         } catch (badgeError) {
             console.error('Error awarding group creation badge:', badgeError);
             // Don't fail the group creation if badge awarding fails
         }
         
-        res.status(201).json(newGroup);
+        console.log('[Groups] Final response:', { groupId: response.GroupID, hasBadgeNotifications: response.badgeNotifications?.length > 0 });
+        res.status(201).json(response);
     } catch (error) {
         console.error('Error creating group:', error);
         res.status(500).json({ 
