@@ -42,6 +42,9 @@ model Profile {
   votingParticipations VotingSessionParticipant[] @relation("profile_participant")
   userBadges       UserBadge[]      @relation("profile_userbadge")
   primaryBadge     Badge?           @relation("profile_primarybadge", fields: [primaryBadgeId], references: [BadgeID], onDelete: SetNull)
+  hostedGames      GameSession[]    @relation("profile_hostedgame")
+  wonGames         GameSession[]    @relation("profile_wongame")
+  gameParticipations GameParticipant[] @relation("profile_gameparticipant")
 
   @@map("profile")
 }
@@ -93,6 +96,8 @@ model Meal {
   votingSessionsWon VotingSession[] @relation("meal_votingsession")
   mealProposals MealProposal[] @relation("meal_mealproposal")
   mealPortions MealPortion[] @relation("meal_mealportion")
+  gameProposals GameParticipant[] @relation("meal_gameproposal")
+  gameSessionsWon GameSession[] @relation("meal_gamewinner")
 
   @@map("meal")
 }
@@ -151,6 +156,7 @@ model Group {
   consumptions Consumption[] @relation("group_consumption")
   invitations GroupInvitation[] @relation("group_invitation")
   votingSessions VotingSession[] @relation("group_votingsession")
+  gameSessions GameSession[] @relation("group_gamesession")
 
   @@map("group")
 }
@@ -412,4 +418,62 @@ model UserBadge {
 
   @@unique([profileId, badgeId]) // one badge per user
   @@map("userbadge")
+}
+
+enum GameType {
+  egg_clicker
+  roulette
+}
+
+enum GameStatus {
+  waiting    // Waiting for players to join
+  ready      // All players ready, waiting for host to start
+  countdown  // Countdown in progress (3,2,1)
+  playing    // Game in progress
+  submitting // Time's up, waiting for all click data
+  completed  // Game finished, winner determined
+  cancelled  // Game was cancelled
+}
+
+model GameSession {
+  GameSessionID   Int       @id @default(autoincrement())
+  groupId         Int
+  gameType        GameType
+  status          GameStatus @default(waiting)
+  hostId          String    @db.Uuid // Profile who initiated the game
+  duration        Int       @default(30) // Game duration in seconds
+  minPlayers      Int       @default(1) // Minimum players required to start (configurable for testing)
+  startTime       DateTime? // When countdown finished and game actually started
+  endTime         DateTime? // When game time expired
+  winnerId        String?   @db.Uuid // Winner's profile ID
+  winningMealId   Int?      // Winner's meal proposal
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  group           Group     @relation("group_gamesession", fields: [groupId], references: [GroupID], onDelete: Cascade)
+  host            Profile   @relation("profile_hostedgame", fields: [hostId], references: [id], onDelete: Cascade)
+  winner          Profile?  @relation("profile_wongame", fields: [winnerId], references: [id], onDelete: SetNull)
+  winningMeal     Meal?     @relation("meal_gamewinner", fields: [winningMealId], references: [MealID], onDelete: SetNull)
+  participants    GameParticipant[] @relation("gamesession_participant")
+
+  @@map("gamesession")
+}
+
+model GameParticipant {
+  GameParticipantID Int       @id @default(autoincrement())
+  gameSessionId     Int
+  profileId         String    @db.Uuid
+  mealId            Int?      // Meal proposed by this participant
+  clickCount        Int       @default(0) // Number of clicks/taps
+  isReady           Boolean   @default(false) // Ready to start
+  hasSubmitted      Boolean   @default(false) // Has submitted final click count
+  joinedAt          DateTime  @default(now())
+  submittedAt       DateTime? // When click data was submitted
+  
+  gameSession       GameSession @relation("gamesession_participant", fields: [gameSessionId], references: [GameSessionID], onDelete: Cascade)
+  profile           Profile   @relation("profile_gameparticipant", fields: [profileId], references: [id], onDelete: Cascade)
+  meal              Meal?     @relation("meal_gameproposal", fields: [mealId], references: [MealID], onDelete: SetNull)
+
+  @@unique([gameSessionId, profileId]) // One entry per player per game
+  @@map("gameparticipant")
 }
