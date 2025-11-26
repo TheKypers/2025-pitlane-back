@@ -2,6 +2,17 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 /**
+ * Format game type for user-friendly display
+ * e.g., 'egg_clicker' -> 'Egg Clicker'
+ */
+function formatGameType(gameType) {
+  return gameType
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
  * Get game history for a group
  * Returns all completed game sessions with winner details
  */
@@ -132,17 +143,6 @@ async function getGameSessionDetails(sessionId) {
                 }
               }
             }
-          },
-          // Include meal portions consumed by participants
-          mealPortions: {
-            include: {
-              meal: true,
-              foodPortions: {
-                include: {
-                  food: true
-                }
-              }
-            }
           }
         },
         orderBy: {
@@ -156,44 +156,82 @@ async function getGameSessionDetails(sessionId) {
     return null;
   }
 
-  // Format participant data
-  const participants = session.participants.map(participant => ({
-    participantId: participant.GameParticipantID,
-    profile: {
-      id: participant.profile.id,
-      username: participant.profile.username
+  // Fetch meal portions for game session
+  const mealPortions = await prisma.mealPortion.findMany({
+    where: {
+      gameSessionId: parseInt(sessionId),
+      source: 'game'
     },
-    proposedMeal: participant.meal ? {
-      mealId: participant.meal.MealID,
-      name: participant.meal.name,
-      description: participant.meal.description,
-      foods: participant.meal.mealFoods.map(mf => ({
-        foodId: mf.food.FoodID,
-        name: mf.food.name,
-        quantity: mf.quantity,
-        unit: mf.unit,
-        kcalsPer100g: mf.food.kcalsPer100g
+    include: {
+      profile: {
+        select: {
+          id: true,
+          username: true
+        }
+      },
+      meal: true,
+      foodPortions: {
+        include: {
+          food: true
+        }
+      }
+    }
+  });
+
+  // Group portions by profile ID
+  const portionsByProfile = {};
+  mealPortions.forEach(portion => {
+    if (!portionsByProfile[portion.profileId]) {
+      portionsByProfile[portion.profileId] = [];
+    }
+    portionsByProfile[portion.profileId].push(portion);
+  });
+
+  // Format participant data
+  const participants = session.participants.map(participant => {
+    const participantPortions = portionsByProfile[participant.profileId] || [];
+    const hasSelectedPortion = participantPortions.length > 0;
+    const portionFraction = hasSelectedPortion ? participantPortions[0].portionFraction : undefined;
+    
+    return {
+      participantId: participant.GameParticipantID,
+      profile: {
+        id: participant.profile.id,
+        username: participant.profile.username
+      },
+      proposedMeal: participant.meal ? {
+        mealId: participant.meal.MealID,
+        name: participant.meal.name,
+        description: participant.meal.description,
+        foods: participant.meal.mealFoods.map(mf => ({
+          foodId: mf.food.FoodID,
+          name: mf.food.name,
+          quantity: mf.quantity,
+          kCal: mf.food.kCal
+        }))
+      } : null,
+      clickCount: participant.clickCount,
+      isReady: participant.isReady,
+      hasSubmitted: participant.hasSubmitted,
+      joinedAt: participant.joinedAt,
+      submittedAt: participant.submittedAt,
+      hasSelectedPortion,
+      portionFraction,
+      // Meal portions consumed
+      mealPortions: participantPortions.map(mp => ({
+        mealId: mp.mealId,
+        mealName: mp.meal.name,
+        mealPortionId: mp.MealPortionID,
+        consumedAt: mp.consumedAt,
+        foodPortions: mp.foodPortions.map(fp => ({
+          foodId: fp.foodId,
+          name: fp.food.name,
+          portionFraction: fp.portionFraction,
+          quantityConsumed: fp.quantityConsumed
+        }))
       }))
-    } : null,
-    clickCount: participant.clickCount,
-    isReady: participant.isReady,
-    hasSubmitted: participant.hasSubmitted,
-    joinedAt: participant.joinedAt,
-    submittedAt: participant.submittedAt,
-    // Meal portions consumed
-    mealPortions: participant.mealPortions.map(mp => ({
-      mealId: mp.mealId,
-      mealName: mp.meal.name,
-      mealPortionId: mp.MealPortionID,
-      consumedAt: mp.consumedAt,
-      foodPortions: mp.foodPortions.map(fp => ({
-        foodId: fp.foodId,
-        name: fp.food.name,
-        gramsConsumed: fp.gramsConsumed,
-        kcalsConsumed: fp.kcalsConsumed
-      }))
-    }))
-  }));
+    };
+  });
 
   // Format the response
   return {
@@ -221,8 +259,7 @@ async function getGameSessionDetails(sessionId) {
         foodId: mf.food.FoodID,
         name: mf.food.name,
         quantity: mf.quantity,
-        unit: mf.unit,
-        kcalsPer100g: mf.food.kcalsPer100g
+        kCal: mf.food.kCal
       }))
     } : null,
     participants
@@ -233,7 +270,21 @@ async function getGameSessionDetails(sessionId) {
  * Register meal portion for a game participant
  * Allows participants to record what portions of the winning meal they consumed
  */
-async function registerGameMealPortion(sessionId, profileId, mealId, foodPortions) {
+async function registerGameMealPortion(sessionId, profileId, mealId, portionData) {
+  console.log('[Game History Lib] registerGameMealPortion called with:', {
+    sessionId,
+    profileId,
+    mealId,
+    portionData
+  });
+  
+  const { mealPortionFraction, foodPortions } = portionData;
+  
+  console.log('[Game History Lib] Destructured values:', {
+    mealPortionFraction,
+    foodPortionsCount: foodPortions?.length
+  });
+
   // Verify participant was in the game
   const participant = await prisma.gameParticipant.findFirst({
     where: {
@@ -248,38 +299,63 @@ async function registerGameMealPortion(sessionId, profileId, mealId, foodPortion
 
   // Verify the game is completed
   const session = await prisma.gameSession.findUnique({
-    where: { GameSessionID: parseInt(sessionId) }
+    where: { GameSessionID: parseInt(sessionId) },
+    include: {
+      winningMeal: {
+        include: {
+          mealFoods: {
+            include: {
+              food: true
+            }
+          }
+        }
+      }
+    }
   });
 
   if (!session || session.status !== 'completed') {
     throw new Error('Can only register portions for completed games');
   }
 
-  // Check if portion already exists
+  if (!session.winningMeal) {
+    throw new Error('Game session does not have a winning meal');
+  }
+
+  // Check if portion already exists for this user and game session
   const existingPortion = await prisma.mealPortion.findFirst({
     where: {
       profileId: profileId,
-      mealId: parseInt(mealId),
-      gameParticipantId: participant.GameParticipantID
+      gameSessionId: parseInt(sessionId),
+      source: 'game'
     }
   });
 
+  let mealPortion;
   if (existingPortion) {
     // Update existing portion
     await prisma.foodPortion.deleteMany({
       where: { mealPortionId: existingPortion.MealPortionID }
     });
 
-    const updatedPortion = await prisma.mealPortion.update({
+    mealPortion = await prisma.mealPortion.update({
       where: { MealPortionID: existingPortion.MealPortionID },
       data: {
+        portionFraction: parseFloat(mealPortionFraction),
         consumedAt: new Date(),
         foodPortions: {
-          create: foodPortions.map(fp => ({
-            foodId: fp.foodId,
-            gramsConsumed: fp.gramsConsumed,
-            kcalsConsumed: fp.kcalsConsumed
-          }))
+          create: foodPortions.map(fp => {
+            // Find the original meal food to calculate quantity consumed
+            const originalFood = session.winningMeal?.mealFoods.find(mf => mf.foodId === fp.foodId);
+            const quantityConsumed = originalFood 
+              ? originalFood.quantity * fp.portionFraction 
+              : 0;
+
+            return {
+              foodId: fp.foodId,
+              portionFraction: fp.portionFraction,
+              quantityConsumed: quantityConsumed
+            };
+          })
         }
       },
       include: {
@@ -290,22 +366,30 @@ async function registerGameMealPortion(sessionId, profileId, mealId, foodPortion
         }
       }
     });
-
-    return updatedPortion;
   } else {
     // Create new portion
-    const mealPortion = await prisma.mealPortion.create({
+    mealPortion = await prisma.mealPortion.create({
       data: {
         profileId: profileId,
         mealId: parseInt(mealId),
-        gameParticipantId: participant.GameParticipantID,
+        source: 'game',
+        gameSessionId: parseInt(sessionId),
+        portionFraction: parseFloat(mealPortionFraction),
         consumedAt: new Date(),
         foodPortions: {
-          create: foodPortions.map(fp => ({
-            foodId: fp.foodId,
-            gramsConsumed: fp.gramsConsumed,
-            kcalsConsumed: fp.kcalsConsumed
-          }))
+          create: foodPortions.map(fp => {
+            // Find the original meal food to calculate quantity consumed
+            const originalFood = session.winningMeal?.mealFoods.find(mf => mf.foodId === fp.foodId);
+            const quantityConsumed = originalFood 
+              ? originalFood.quantity * fp.portionFraction 
+              : 0;
+
+            return {
+              foodId: fp.foodId,
+              portionFraction: fp.portionFraction,
+              quantityConsumed: quantityConsumed
+            };
+          })
         }
       },
       include: {
@@ -316,9 +400,69 @@ async function registerGameMealPortion(sessionId, profileId, mealId, foodPortion
         }
       }
     });
-
-    return mealPortion;
   }
+
+  // Create or update individual consumption for the user based on selected portions
+  try {
+    // Calculate total calories from selected portions
+    const totalCalories = session.winningMeal.mealFoods.reduce((sum, mealFood) => {
+      const foodPortion = foodPortions.find(fp => fp.foodId === mealFood.foodId);
+      const portionFraction = foodPortion ? parseFloat(foodPortion.portionFraction) : mealPortionFraction;
+      const quantityConsumed = mealFood.quantity * portionFraction;
+      return sum + (mealFood.food.kCal * quantityConsumed / mealFood.quantity);
+    }, 0);
+
+    // Check if consumption already exists for this meal portion
+    const existingConsumption = await prisma.consumption.findFirst({
+      where: {
+        profileId: profileId,
+        consumptionMeals: {
+          some: {
+            mealPortionId: mealPortion.MealPortionID
+          }
+        }
+      }
+    });
+
+    if (existingConsumption) {
+      // Update existing consumption
+      await prisma.consumption.update({
+        where: { ConsumptionID: existingConsumption.ConsumptionID },
+        data: {
+          name: `${session.winningMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
+          description: `From ${formatGameType(session.gameType)} game - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
+          totalKcal: Math.round(totalCalories)
+        }
+      });
+      console.log('[Game History] Updated consumption:', existingConsumption.ConsumptionID);
+    } else {
+      // Create new consumption record with ConsumptionMeal linked to MealPortion
+      const consumption = await prisma.consumption.create({
+        data: {
+          profileId: profileId,
+          name: `${session.winningMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
+          description: `From ${formatGameType(session.gameType)} game - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
+          type: 'individual',
+          totalKcal: Math.round(totalCalories),
+          consumptionMeals: {
+            create: {
+              mealId: session.winningMealId,
+              mealPortionId: mealPortion.MealPortionID,
+              quantity: 1
+            }
+          }
+        }
+      });
+
+      console.log('[Game History] Created consumption:', consumption.ConsumptionID, 'with', totalCalories, 'kCal, linked to MealPortion:', mealPortion.MealPortionID);
+    }
+  } catch (consumptionError) {
+    console.error('[Game History] Error creating/updating consumption:', consumptionError);
+    // Don't fail the whole operation if consumption creation fails
+    // The portion selection is still saved
+  }
+
+  return mealPortion;
 }
 
 module.exports = {

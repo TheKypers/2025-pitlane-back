@@ -35,15 +35,6 @@ async function getGroupVotingHistory(groupId, limit = 10, offset = 0) {
               id: true,
               username: true
             }
-          },
-          mealPortions: {
-            include: {
-              foodPortions: {
-                include: {
-                  food: true
-                }
-              }
-            }
           }
         }
       },
@@ -118,20 +109,29 @@ async function getVotingSessionDetails(sessionId) {
               id: true,
               username: true
             }
-          },
-          mealPortions: {
-            include: {
-              meal: true,
-              foodPortions: {
-                include: {
-                  food: true
-                }
-              }
-            }
           }
         },
         orderBy: {
           joinedAt: 'asc'
+        }
+      },
+      mealPortions: {
+        include: {
+          profile: {
+            select: {
+              id: true,
+              username: true
+            }
+          },
+          meal: true,
+          foodPortions: {
+            include: {
+              food: true
+            }
+          }
+        },
+        where: {
+          source: 'voting'
         }
       }
     }
@@ -175,12 +175,15 @@ async function getVotingSessionDetails(sessionId) {
         ? new Date(session.completedAt.getTime() + 15 * 60 * 1000)
         : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // Far future if not completed
 
+      // Find this participant's meal portion
+      const userPortion = session.mealPortions.find(mp => mp.profileId === participant.userId);
+
       return {
         userId: participant.userId,
         userName: participant.user.username,
         hasSelectedPortion: participant.hasSelectedPortion,
         defaultedToWhole: participant.defaultedToWhole,
-        portionFraction: participant.mealPortions[0]?.portionFraction,
+        portionFraction: userPortion?.portionFraction,
         portionDeadline: portionDeadline.toISOString(),
         joinedAt: participant.joinedAt
       };
@@ -310,11 +313,12 @@ async function selectMealPortion(sessionId, userId, portionData) {
     throw new Error('No winner meal found');
   }
 
-  // Find existing meal portion for this participant and meal
+  // Find existing meal portion for this participant and voting session
   const existingMealPortion = await prisma.mealPortion.findFirst({
     where: {
-      participantId: participant.ParticipantID,
-      mealId: session.winnerMealId
+      profileId: userId,
+      votingSessionId: parseInt(sessionId),
+      source: 'voting'
     }
   });
 
@@ -324,15 +328,18 @@ async function selectMealPortion(sessionId, userId, portionData) {
     mealPortion = await prisma.mealPortion.update({
       where: { MealPortionID: existingMealPortion.MealPortionID },
       data: {
-        portionFraction: parseFloat(mealPortionFraction)
+        portionFraction: parseFloat(mealPortionFraction),
+        consumedAt: new Date()
       }
     });
   } else {
     // Create new meal portion
     mealPortion = await prisma.mealPortion.create({
       data: {
-        participantId: participant.ParticipantID,
+        profileId: userId,
         mealId: session.winnerMealId,
+        source: 'voting',
+        votingSessionId: parseInt(sessionId),
         portionFraction: parseFloat(mealPortionFraction)
       }
     });
@@ -371,7 +378,7 @@ async function selectMealPortion(sessionId, userId, portionData) {
     }
   });
 
-  // Create individual consumption for the user based on selected portions
+  // Create or update individual consumption for the user based on selected portions
   try {
     // Calculate total calories from selected portions
     const totalCalories = session.winnerMeal.mealFoods.reduce((sum, mealFood) => {
@@ -381,72 +388,104 @@ async function selectMealPortion(sessionId, userId, portionData) {
       return sum + (mealFood.food.kCal * quantityConsumed / mealFood.quantity);
     }, 0);
 
-    // Create consumption record with ConsumptionMeal linked to MealPortion
-    const consumption = await prisma.consumption.create({
-      data: {
+    // Check if consumption already exists for this meal portion
+    const existingConsumption = await prisma.consumption.findFirst({
+      where: {
         profileId: userId,
-        name: `${session.winnerMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
-        description: `From voting session - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
-        type: 'individual',
-        totalKcal: Math.round(totalCalories),
         consumptionMeals: {
-          create: {
-            mealId: session.winnerMealId,
-            mealPortionId: mealPortion.MealPortionID,
-            quantity: 1
-          }
-        }
-      },
-      include: {
-        consumptionMeals: {
-          include: {
-            meal: {
-              include: {
-                mealFoods: {
-                  include: {
-                    food: true
-                  }
-                }
-              }
-            },
-            mealPortion: {
-              include: {
-                foodPortions: {
-                  include: {
-                    food: true
-                  }
-                }
-              }
-            }
+          some: {
+            mealPortionId: mealPortion.MealPortionID
           }
         }
       }
     });
 
-    console.log('[Voting History] Created consumption:', consumption.ConsumptionID, 'with', totalCalories, 'kCal, linked to MealPortion:', mealPortion.MealPortionID);
+    if (existingConsumption) {
+      // Update existing consumption
+      await prisma.consumption.update({
+        where: { ConsumptionID: existingConsumption.ConsumptionID },
+        data: {
+          name: `${session.winnerMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
+          description: `From voting session - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
+          totalKcal: Math.round(totalCalories)
+        }
+      });
+      console.log('[Voting History] Updated consumption:', existingConsumption.ConsumptionID);
+    } else {
+      // Create new consumption record with ConsumptionMeal linked to MealPortion
+      const consumption = await prisma.consumption.create({
+        data: {
+          profileId: userId,
+          name: `${session.winnerMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
+          description: `From voting session - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
+          type: 'individual',
+          totalKcal: Math.round(totalCalories),
+          consumptionMeals: {
+            create: {
+              mealId: session.winnerMealId,
+              mealPortionId: mealPortion.MealPortionID,
+              quantity: 1
+            }
+          }
+        },
+        include: {
+          consumptionMeals: {
+            include: {
+              meal: {
+                include: {
+                  mealFoods: {
+                    include: {
+                      food: true
+                    }
+                  }
+                }
+              },
+              mealPortion: {
+                include: {
+                  foodPortions: {
+                    include: {
+                      food: true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      console.log('[Voting History] Created consumption:', consumption.ConsumptionID, 'with', totalCalories, 'kCal, linked to MealPortion:', mealPortion.MealPortionID);
+    }
   } catch (consumptionError) {
-    console.error('[Voting History] Error creating consumption:', consumptionError);
+    console.error('[Voting History] Error creating/updating consumption:', consumptionError);
     // Don't fail the whole operation if consumption creation fails
     // The portion selection is still saved
   }
 
-  // Get updated participant with portions
-  const updatedParticipant = await prisma.votingSessionParticipant.findUnique({
-    where: { ParticipantID: participant.ParticipantID },
+  // Get updated participant with meal portion
+  const userMealPortion = await prisma.mealPortion.findFirst({
+    where: {
+      profileId: userId,
+      votingSessionId: parseInt(sessionId),
+      source: 'voting'
+    },
     include: {
-      mealPortions: {
+      foodPortions: {
         include: {
-          foodPortions: {
-            include: {
-              food: true
-            }
-          }
+          food: true
         }
       }
     }
   });
 
-  return updatedParticipant;
+  const updatedParticipant = await prisma.votingSessionParticipant.findUnique({
+    where: { ParticipantID: participant.ParticipantID }
+  });
+
+  return {
+    ...updatedParticipant,
+    mealPortion: userMealPortion
+  };
 }
 
 /**
@@ -484,7 +523,9 @@ async function defaultExpiredParticipants(sessionId) {
     // Create whole meal portion
     const mealPortion = await prisma.mealPortion.create({
       data: {
-        participantId: participant.ParticipantID,
+        profileId: participant.userId,
+        votingSessionId: participant.votingSessionId,
+        source: 'voting',
         mealId: participant.votingSession.winnerMealId,
         portionFraction: 1.0 // whole meal
       }

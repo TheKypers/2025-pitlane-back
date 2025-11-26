@@ -55,11 +55,27 @@ router.get('/session/:sessionId', async (req, res) => {
 router.post('/session/:sessionId/register-portion', async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { profileId, mealId, foodPortions } = req.body;
+    const { profileId, mealId, mealPortionFraction, foodPortions } = req.body;
 
-    if (!profileId || !mealId || !foodPortions || !Array.isArray(foodPortions)) {
+    console.log('[Game History Route] Received request:', {
+      sessionId,
+      profileId,
+      mealId,
+      mealPortionFraction,
+      foodPortionsCount: foodPortions?.length,
+      foodPortions
+    });
+
+    if (!profileId || !mealId || !mealPortionFraction || !foodPortions || !Array.isArray(foodPortions)) {
+      console.error('[Game History Route] Validation failed:', {
+        hasProfileId: !!profileId,
+        hasMealId: !!mealId,
+        hasMealPortionFraction: !!mealPortionFraction,
+        hasFoodPortions: !!foodPortions,
+        isFoodPortionsArray: Array.isArray(foodPortions)
+      });
       return res.status(400).json({ 
-        error: 'Missing required fields: profileId, mealId, foodPortions' 
+        error: 'Missing required fields: profileId, mealId, mealPortionFraction, foodPortions' 
       });
     }
 
@@ -67,7 +83,7 @@ router.post('/session/:sessionId/register-portion', async (req, res) => {
       sessionId,
       profileId,
       mealId,
-      foodPortions
+      { mealPortionFraction, foodPortions }
     );
 
     res.json({

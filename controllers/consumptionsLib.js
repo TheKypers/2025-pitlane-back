@@ -209,9 +209,10 @@ async function createIndividualConsumption(consumptionData, profileId) {
         // Create MealPortion (without participantId for manual portions)
         const mealPortion = await prisma.mealPortion.create({
             data: {
+                profileId: profileId,
                 mealId: meal.mealId,
+                source: "individual",
                 portionFraction: portions.portionFraction || 1.0,
-                participantId: null, // Manual portion, not from voting
                 foodPortions: {
                     create: portions.foodPortions.map(fp => {
                         const mealFood = mealData.mealFoods.find(mf => mf.foodId === fp.foodId);
@@ -429,9 +430,10 @@ async function createGroupConsumption(consumptionData, profileId) {
         // Create MealPortion (without participantId for manual portions)
         const mealPortion = await prisma.mealPortion.create({
             data: {
+                profileId: profileId,
                 mealId: meal.mealId,
+                source: "individual",
                 portionFraction: portions.portionFraction || 1.0,
-                participantId: null, // Manual portion, not from voting
                 foodPortions: {
                     create: portions.foodPortions.map(fp => {
                         const mealFood = mealData.mealFoods.find(mf => mf.foodId === fp.foodId);
@@ -1009,6 +1011,152 @@ async function getGroupMostConsumedMeals(groupId, limit = 3) {
     };
 }
 
+/**
+ * Get all meal portions for a user (including voting and game portions)
+ * This provides a unified view of all consumptions regardless of source
+ */
+async function getUserMealPortions(profileId, filters = {}) {
+    const { startDate, endDate, source } = filters;
+    
+    let whereClause = {
+        profileId: profileId
+    };
+
+    if (source) {
+        whereClause.source = source;
+    }
+
+    if (startDate || endDate) {
+        whereClause.consumedAt = {};
+        if (startDate) {
+            whereClause.consumedAt.gte = new Date(startDate);
+        }
+        if (endDate) {
+            whereClause.consumedAt.lte = new Date(endDate);
+        }
+    }
+
+    const mealPortions = await prisma.mealPortion.findMany({
+        where: whereClause,
+        include: {
+            meal: {
+                include: {
+                    mealFoods: {
+                        include: {
+                            food: true
+                        }
+                    }
+                }
+            },
+            foodPortions: {
+                include: {
+                    food: true
+                }
+            },
+            votingSession: {
+                select: {
+                    VotingSessionID: true,
+                    completedAt: true,
+                    group: {
+                        select: {
+                            GroupID: true,
+                            name: true
+                        }
+                    }
+                }
+            },
+            gameSession: {
+                select: {
+                    GameSessionID: true,
+                    endTime: true,
+                    gameType: true,
+                    group: {
+                        select: {
+                            GroupID: true,
+                            name: true
+                        }
+                    }
+                }
+            },
+            consumptionMeals: {
+                include: {
+                    consumption: {
+                        select: {
+                            ConsumptionID: true,
+                            name: true,
+                            description: true,
+                            type: true
+                        }
+                    }
+                }
+            }
+        },
+        orderBy: {
+            consumedAt: 'desc'
+        }
+    });
+
+    // Format the response with source context
+    return mealPortions.map(mp => {
+        const totalCalories = mp.foodPortions.reduce((sum, fp) => 
+            sum + (fp.food.kCal * fp.quantityConsumed), 0
+        );
+
+        let sourceContext = {};
+        if (mp.source === 'voting' && mp.votingSession) {
+            sourceContext = {
+                type: 'voting',
+                sessionId: mp.votingSession.VotingSessionID,
+                completedAt: mp.votingSession.completedAt,
+                group: mp.votingSession.group
+            };
+        } else if (mp.source === 'game' && mp.gameSession) {
+            sourceContext = {
+                type: 'game',
+                sessionId: mp.gameSession.GameSessionID,
+                gameType: mp.gameSession.gameType,
+                endTime: mp.gameSession.endTime,
+                group: mp.gameSession.group
+            };
+        } else {
+            sourceContext = {
+                type: 'individual',
+                consumption: mp.consumptionMeals[0]?.consumption
+            };
+        }
+
+        return {
+            mealPortionId: mp.MealPortionID,
+            mealId: mp.mealId,
+            meal: {
+                MealID: mp.meal.MealID,
+                name: mp.meal.name,
+                description: mp.meal.description
+            },
+            portionFraction: mp.portionFraction,
+            consumedAt: mp.consumedAt,
+            totalCalories: Math.round(totalCalories),
+            source: mp.source,
+            votingSession: mp.votingSession,
+            gameSession: mp.gameSession,
+            consumption: mp.consumptionMeals[0]?.consumption,
+            sourceContext: sourceContext,
+            foodPortions: mp.foodPortions.map(fp => ({
+                FoodPortionID: fp.FoodPortionID,
+                foodId: fp.foodId,
+                food: {
+                    FoodID: fp.food.FoodID,
+                    name: fp.food.name,
+                    kCal: fp.food.kCal
+                },
+                portionFraction: fp.portionFraction,
+                quantityConsumed: fp.quantityConsumed,
+                calories: Math.round(fp.food.kCal * fp.quantityConsumed)
+            }))
+        };
+    });
+}
+
 module.exports = {
     getConsumptions,
     getConsumptionById,
@@ -1018,5 +1166,6 @@ module.exports = {
     deleteConsumption,
     getConsumptionStats,
     getGroupFilteredMeals,
-    getGroupMostConsumedMeals
+    getGroupMostConsumedMeals,
+    getUserMealPortions
 };
