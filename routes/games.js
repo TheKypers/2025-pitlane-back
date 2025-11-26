@@ -238,6 +238,28 @@ router.post('/:gameSessionId/force-complete', async (req, res) => {
 });
 
 /**
+ * POST /games/:gameSessionId/roulette/spin
+ * Complete a roulette game by randomly selecting a proposed meal (host only)
+ */
+router.post('/:gameSessionId/roulette/spin', async (req, res) => {
+  try {
+    const { gameSessionId } = req.params;
+    const { hostId } = req.body;
+
+    if (!hostId) {
+      return res.status(400).json({ error: 'Missing required field: hostId' });
+    }
+
+    const gameSession = await gamesLib.completeRoulette(gameSessionId, hostId);
+
+    res.status(200).json(gameSession);
+  } catch (error) {
+    console.error('[games] Error spinning roulette:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * DELETE /games/:gameSessionId
  * Cancel a game session (host only)
  */

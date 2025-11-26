@@ -2,6 +2,66 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 /**
+ * Create group and individual consumption records for a completed game
+ */
+async function recordGroupConsumptionForGame(session) {
+  try {
+    if (!session || session.status !== 'completed' || !session.winningMeal) return;
+
+    const groupId = session.groupId;
+    // Calculate total Kcal of the winning meal
+    const totalKcal = session.winningMeal.mealFoods.reduce((sum, mf) => {
+      return sum + (mf.food.kCal * mf.quantity);
+    }, 0);
+
+    const name = `${session.winningMeal.name} (Game: ${session.gameType})`;
+    const description = `Chosen from ${session.gameType} game session #${session.GameSessionID}`;
+
+    // Create group consumption
+    const groupConsumption = await prisma.consumption.create({
+      data: {
+        name,
+        description,
+        type: 'group',
+        profileId: session.hostId, // recorded by host
+        groupId: groupId,
+        totalKcal: Math.round(totalKcal),
+        consumedAt: session.endTime || new Date(),
+        consumptionMeals: {
+          create: [{
+            mealId: session.winningMealId,
+            quantity: 1
+          }]
+        }
+      }
+    });
+
+    // Create individual consumptions for each active group member
+    const memberIds = session.group.members.map(m => m.profileId);
+    await Promise.all(memberIds.map(profileId =>
+      prisma.consumption.create({
+        data: {
+          name: `${session.winningMeal.name} (Group: ${groupConsumption.groupId})`,
+          description: `Individual consumption from game session #${session.GameSessionID}`,
+          type: 'individual',
+          profileId,
+          totalKcal: Math.round(totalKcal),
+          consumedAt: session.endTime || new Date(),
+          consumptionMeals: {
+            create: [{
+              mealId: session.winningMealId,
+              quantity: 1
+            }]
+          }
+        }
+      })
+    ));
+  } catch (err) {
+    console.error('[gamesLib] Error recording group consumption for game:', err);
+  }
+}
+
+/**
  * Create a new game session
  */
 async function createGameSession(groupId, hostId, gameType, duration = 30, minPlayers = 1) {
@@ -140,7 +200,7 @@ async function joinGameSession(gameSessionId, profileId, mealId) {
         where: { MealID: parseInt(mealId) }
       });
 
-      if (!meal || meal.profileId !== profileId) {
+      if (!meal) {
         throw new Error('Invalid meal selection');
       }
     }
@@ -419,14 +479,31 @@ async function submitClickCount(gameSessionId, profileId, clickCount) {
         p.clickCount > max.clickCount ? p : max
       );
 
-      await prisma.gameSession.update({
+      const completed = await prisma.gameSession.update({
         where: { GameSessionID: parseInt(gameSessionId) },
         data: {
           status: 'completed',
           winnerId: winner.profileId,
           winningMealId: winner.mealId
+        },
+        include: {
+          group: {
+            include: {
+              members: {
+                where: { isActive: true },
+                select: { profileId: true }
+              }
+            }
+          },
+          winningMeal: {
+            include: {
+              mealFoods: { include: { food: true } }
+            }
+          }
         }
       });
+
+      await recordGroupConsumptionForGame(completed);
     }
 
     return updated;
@@ -635,9 +712,16 @@ async function forceCompleteGame(gameSessionId, hostId) {
           orderBy: { clickCount: 'desc' }
         },
         winner: { select: { id: true, username: true } },
-        winningMeal: { select: { MealID: true, name: true } }
+        winningMeal: { include: { mealFoods: { include: { food: true } } } },
+        group: {
+          include: {
+            members: { where: { isActive: true }, select: { profileId: true } }
+          }
+        }
       }
     });
+
+    await recordGroupConsumptionForGame(updatedGame);
 
     return updatedGame;
   } catch (error) {
@@ -658,4 +742,82 @@ module.exports = {
   getActiveGameSession,
   cancelGameSession,
   forceCompleteGame,
+  /**
+   * Complete a roulette game by selecting a random participant's meal
+   * Only host can trigger the spin. Works when status is 'ready' or 'playing'/'submitting'.
+   */
+  completeRoulette: async function (gameSessionId, hostId) {
+    try {
+      const gameSession = await prisma.gameSession.findUnique({
+        where: { GameSessionID: parseInt(gameSessionId) },
+        include: {
+          participants: {
+            include: {
+              profile: { select: { id: true, username: true } },
+              meal: { select: { MealID: true, name: true } }
+            }
+          }
+        }
+      });
+
+      if (!gameSession) {
+        throw new Error('Game session not found');
+      }
+
+      if (gameSession.gameType !== 'roulette') {
+        throw new Error('This action is only valid for roulette games');
+      }
+
+      if (gameSession.hostId !== hostId) {
+        throw new Error('Only the host can spin the roulette');
+      }
+
+      if (['cancelled', 'completed'].includes(gameSession.status)) {
+        throw new Error('Game is not active');
+      }
+
+      // Eligible participants: have a proposed meal
+      const eligible = gameSession.participants.filter(p => p.mealId);
+
+      if (eligible.length === 0) {
+        throw new Error('No meal proposals to select from');
+      }
+
+      // Randomly pick one
+      const idx = Math.floor(Math.random() * eligible.length);
+      const winner = eligible[idx];
+
+      const updatedGame = await prisma.gameSession.update({
+        where: { GameSessionID: parseInt(gameSessionId) },
+        data: {
+          status: 'completed',
+          winnerId: winner.profileId,
+          winningMealId: winner.mealId
+        },
+        include: {
+          participants: {
+            include: {
+              profile: { select: { id: true, username: true } },
+              meal: { select: { MealID: true, name: true } }
+            }
+          },
+          winner: { select: { id: true, username: true } },
+          winningMeal: { include: { mealFoods: { include: { food: true } } } },
+          group: {
+            include: {
+              members: { where: { isActive: true }, select: { profileId: true } }
+            }
+          }
+        }
+      });
+
+      await recordGroupConsumptionForGame(updatedGame);
+
+      return updatedGame;
+    } catch (error) {
+      console.error('[gamesLib] Error completing roulette:', error);
+      throw error;
+    }
+
+  },
 };
