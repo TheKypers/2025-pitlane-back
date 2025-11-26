@@ -347,8 +347,8 @@ model MealPortion {
   createdAt           DateTime                   @default(now())
   profile             Profile                    @relation("profile_mealportion", fields: [profileId], references: [id], onDelete: Cascade)
   meal                Meal                       @relation("meal_mealportion", fields: [mealId], references: [MealID], onDelete: Cascade)
-  votingSession       VotingSession?             @relation("votingsession_mealportion", fields: [votingSessionId], references: [VotingSessionID], onDelete: Cascade)
-  gameSession         GameSession?               @relation("gamesession_mealportion", fields: [gameSessionId], references: [GameSessionID], onDelete: Cascade)
+  votingSession       VotingSession?             @relation("votingsession_mealportion", fields: [votingSessionId], references: [VotingSessionID], onDelete: SetNull)
+  gameSession         GameSession?               @relation("gamesession_mealportion", fields: [gameSessionId], references: [GameSessionID], onDelete: SetNull)
   foodPortions        FoodPortion[]              @relation("mealportion_foodportion")
   consumptionMeals    ConsumptionMeal[]          @relation("consumptionmeal_mealportion")
   
