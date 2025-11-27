@@ -31,6 +31,33 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /consumptions/user/:profileId/meal-portions
+ * Get all meal portions for a user (includes voting, game, and individual portions)
+ * This provides a unified view of all consumptions regardless of source
+ */
+router.get('/user/:profileId/meal-portions', async (req, res) => {
+    try {
+        const { profileId } = req.params;
+        const { startDate, endDate, source } = req.query;
+        
+        const filters = {};
+        if (startDate) filters.startDate = startDate;
+        if (endDate) filters.endDate = endDate;
+        if (source) filters.source = source; // 'individual', 'voting', or 'game'
+        
+        const mealPortions = await consumptionsLib.getUserMealPortions(profileId, filters);
+        
+        res.json(mealPortions);
+    } catch (error) {
+        console.error('Error fetching user meal portions:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch user meal portions',
+            details: error.message 
+        });
+    }
+});
+
+/**
  * GET /consumptions/user/:profileId
  * Get individual consumptions for a specific user (excludes group consumptions)
  */

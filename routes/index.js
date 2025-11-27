@@ -8,6 +8,8 @@ const consumptionsRouter = require('./consumptions');
 const votingRouter = require('./voting');
 const votingHistoryRouter = require('./votingHistory');
 const badgesRouter = require('./badges');
+const gamesRouter = require('./games');
+const gameHistoryRouter = require('./gameHistory');
 
 const preferencesRouter = require('./preferences');
 const dietaryRestrictionsRouter = require('./dietaryRestrictions');
@@ -20,6 +22,8 @@ router.use('/consumptions', consumptionsRouter);
 router.use('/voting', votingRouter);
 router.use('/voting/history', votingHistoryRouter);
 router.use('/badges', badgesRouter);
+router.use('/games', gamesRouter);
+router.use('/game-history', gameHistoryRouter);
 
 router.use('/preferences', preferencesRouter);
 router.use('/dietary-restrictions', dietaryRestrictionsRouter);

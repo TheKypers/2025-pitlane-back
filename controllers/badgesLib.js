@@ -291,6 +291,26 @@ class BadgesLibrary {
           }
           break;
 
+        case 'game_clicker_won':
+          const clickerWinnerBadge = await prisma.badge.findFirst({
+            where: { badgeType: 'game_clicker_winner', isActive: true }
+          });
+          if (clickerWinnerBadge) {
+            const result = await this.awardBadge(profileId, clickerWinnerBadge.BadgeID, 1);
+            results.push(result);
+          }
+          break;
+
+        case 'game_roulette_won':
+          const rouletteWinnerBadge = await prisma.badge.findFirst({
+            where: { badgeType: 'game_roulette_winner', isActive: true }
+          });
+          if (rouletteWinnerBadge) {
+            const result = await this.awardBadge(profileId, rouletteWinnerBadge.BadgeID, 1);
+            results.push(result);
+          }
+          break;
+
         default:
           console.warn(`Unknown badge action: ${action}`);
       }
