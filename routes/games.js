@@ -262,17 +262,18 @@ router.post('/:gameSessionId/roulette/determine-winner', async (req, res) => {
 /**
  * POST /games/:gameSessionId/roulette/spin
  * Complete a roulette game by randomly selecting a proposed meal (host only)
+ * Or use predetermined winner if winnerProfileId is provided
  */
 router.post('/:gameSessionId/roulette/spin', async (req, res) => {
   try {
     const { gameSessionId } = req.params;
-    const { hostId } = req.body;
+    const { hostId, winnerProfileId } = req.body;
 
     if (!hostId) {
       return res.status(400).json({ error: 'Missing required field: hostId' });
     }
 
-    const gameSession = await gamesLib.completeRoulette(gameSessionId, hostId);
+    const gameSession = await gamesLib.completeRoulette(gameSessionId, hostId, winnerProfileId);
 
     res.status(200).json(gameSession);
   } catch (error) {

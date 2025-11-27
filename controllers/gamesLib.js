@@ -844,7 +844,7 @@ module.exports = {
     }
   },
 
-  completeRoulette: async function (gameSessionId, hostId) {
+  completeRoulette: async function (gameSessionId, hostId, winnerProfileId = null) {
     try {
       const gameSession = await prisma.gameSession.findUnique({
         where: { GameSessionID: parseInt(gameSessionId) },
@@ -881,9 +881,18 @@ module.exports = {
         throw new Error('No meal proposals to select from');
       }
 
-      // Randomly pick one
-      const idx = Math.floor(Math.random() * eligible.length);
-      const winner = eligible[idx];
+      // Use predetermined winner if provided, otherwise pick randomly
+      let winner;
+      if (winnerProfileId) {
+        winner = eligible.find(p => p.profileId === winnerProfileId);
+        if (!winner) {
+          throw new Error('Predetermined winner not found among eligible participants');
+        }
+      } else {
+        // Randomly pick one
+        const idx = Math.floor(Math.random() * eligible.length);
+        winner = eligible[idx];
+      }
 
       const updatedGame = await prisma.gameSession.update({
         where: { GameSessionID: parseInt(gameSessionId) },
