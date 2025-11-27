@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const BadgesLibrary = require('./badgesLib');
 
 /**
  * Create group and individual consumption records for a completed game
@@ -504,6 +505,15 @@ async function submitClickCount(gameSessionId, profileId, clickCount) {
       });
 
       await recordGroupConsumptionForGame(completed);
+      
+      // Award badge to the winner and get notifications
+      const badgeResult = await BadgesLibrary.checkAndAwardBadges(winner.profileId, 'game_clicker_won');
+      
+      // Attach badge notifications to updated participant
+      if (badgeResult.success && badgeResult.badgeNotifications && badgeResult.badgeNotifications.length > 0) {
+        updated.badgeNotifications = badgeResult.badgeNotifications;
+        console.log(`[gamesLib] Winner ${winner.profileId} earned ${badgeResult.badgeNotifications.length} badge(s)!`);
+      }
     }
 
     return updated;
@@ -628,7 +638,10 @@ async function getActiveGameSession(groupId) {
 async function cancelGameSession(gameSessionId, hostId) {
   try {
     const gameSession = await prisma.gameSession.findUnique({
-      where: { GameSessionID: parseInt(gameSessionId) }
+      where: { GameSessionID: parseInt(gameSessionId) },
+      include: {
+        participants: true
+      }
     });
 
     if (!gameSession) {
@@ -641,6 +654,19 @@ async function cancelGameSession(gameSessionId, hostId) {
 
     if (gameSession.status === 'completed') {
       throw new Error('Cannot cancel a completed game');
+    }
+
+    // Check if any meals have been proposed (for roulette games)
+    if (gameSession.gameType === 'roulette') {
+      const hasMealsProposed = gameSession.participants.some(p => p.mealId !== null);
+      if (hasMealsProposed) {
+        throw new Error('Cannot cancel game after meals have been proposed');
+      }
+    }
+
+    // Check if game has started (for clicker games)
+    if (gameSession.gameType === 'egg_clicker' && ['playing', 'submitting'].includes(gameSession.status)) {
+      throw new Error('Cannot cancel game after it has started');
     }
 
     const updated = await prisma.gameSession.update({
@@ -722,6 +748,15 @@ async function forceCompleteGame(gameSessionId, hostId) {
     });
 
     await recordGroupConsumptionForGame(updatedGame);
+    
+    // Award badge to the winner and get notifications
+    const badgeResult = await BadgesLibrary.checkAndAwardBadges(winner.profileId, 'game_clicker_won');
+    
+    // Attach badge notifications to game response
+    if (badgeResult.success && badgeResult.badgeNotifications && badgeResult.badgeNotifications.length > 0) {
+      updatedGame.badgeNotifications = badgeResult.badgeNotifications;
+      console.log(`[gamesLib] Winner ${winner.profileId} earned ${badgeResult.badgeNotifications.length} badge(s)!`);
+    }
 
     return updatedGame;
   } catch (error) {
@@ -746,6 +781,69 @@ module.exports = {
    * Complete a roulette game by selecting a random participant's meal
    * Only host can trigger the spin. Works when status is 'ready' or 'playing'/'submitting'.
    */
+  /**
+   * Determine roulette winner without completing the game (for animation)
+   */
+  determineRouletteWinner: async function (gameSessionId, hostId) {
+    try {
+      const gameSession = await prisma.gameSession.findUnique({
+        where: { GameSessionID: parseInt(gameSessionId) },
+        include: {
+          participants: {
+            include: {
+              profile: { select: { id: true, username: true } },
+              meal: { select: { MealID: true, name: true } }
+            }
+          }
+        }
+      });
+
+      if (!gameSession) {
+        throw new Error('Game session not found');
+      }
+
+      if (gameSession.gameType !== 'roulette') {
+        throw new Error('This action is only valid for roulette games');
+      }
+
+      if (gameSession.hostId !== hostId) {
+        throw new Error('Only the host can spin the roulette');
+      }
+
+      if (['cancelled', 'completed'].includes(gameSession.status)) {
+        throw new Error('Game is not active');
+      }
+
+      // Eligible participants: have a proposed meal
+      const eligible = gameSession.participants.filter(p => p.mealId);
+
+      if (eligible.length === 0) {
+        throw new Error('No meal proposals to select from');
+      }
+
+      // Randomly pick one
+      const idx = Math.floor(Math.random() * eligible.length);
+      const winner = eligible[idx];
+
+      // Return winner info and all meals for animation
+      return {
+        winnerId: winner.GameParticipantID,
+        winnerProfileId: winner.profileId,
+        winnerMealId: winner.mealId,
+        meals: eligible.map(p => ({
+          id: p.GameParticipantID,
+          profileId: p.profileId,
+          username: p.profile.username,
+          mealId: p.mealId,
+          mealName: p.meal?.name || 'Unknown'
+        }))
+      };
+    } catch (error) {
+      console.error('[gamesLib] Error determining roulette winner:', error);
+      throw error;
+    }
+  },
+
   completeRoulette: async function (gameSessionId, hostId) {
     try {
       const gameSession = await prisma.gameSession.findUnique({
@@ -812,6 +910,15 @@ module.exports = {
       });
 
       await recordGroupConsumptionForGame(updatedGame);
+      
+      // Award badge to the winner and get notifications
+      const badgeResult = await BadgesLibrary.checkAndAwardBadges(winner.profileId, 'game_roulette_won');
+      
+      // Attach badge notifications to game response
+      if (badgeResult.success && badgeResult.badgeNotifications && badgeResult.badgeNotifications.length > 0) {
+        updatedGame.badgeNotifications = badgeResult.badgeNotifications;
+        console.log(`[gamesLib] Winner ${winner.profileId} earned ${badgeResult.badgeNotifications.length} badge(s)!`);
+      }
 
       return updatedGame;
     } catch (error) {

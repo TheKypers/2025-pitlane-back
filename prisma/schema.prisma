@@ -372,12 +372,14 @@ model FoodPortion {
 
 // Badge System Models
 enum BadgeType {
-  group_creation     // For creating groups
-  voting_participation // For participating in voting sessions
-  voting_winner      // For winning voting sessions
-  meal_creation      // For creating/uploading meals
-  consumption_tracking // For tracking individual consumptions
-  social_engagement  // For social activities
+  group_creation        // For creating groups
+  voting_participation  // For participating in voting sessions
+  voting_winner         // For winning voting sessions
+  meal_creation         // For creating/uploading meals
+  consumption_tracking  // For tracking individual consumptions
+  social_engagement     // For social activities
+  game_clicker_winner   // For winning Egg Clicker games
+  game_roulette_winner  // For winning roulette games
 }
 
 enum BadgeLevel {

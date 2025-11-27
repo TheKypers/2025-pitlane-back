@@ -238,6 +238,28 @@ router.post('/:gameSessionId/force-complete', async (req, res) => {
 });
 
 /**
+ * POST /games/:gameSessionId/roulette/determine-winner
+ * Determine the winner for animation (doesn't complete the game)
+ */
+router.post('/:gameSessionId/roulette/determine-winner', async (req, res) => {
+  try {
+    const { gameSessionId } = req.params;
+    const { hostId } = req.body;
+
+    if (!hostId) {
+      return res.status(400).json({ error: 'Missing required field: hostId' });
+    }
+
+    const winnerData = await gamesLib.determineRouletteWinner(gameSessionId, hostId);
+
+    res.status(200).json(winnerData);
+  } catch (error) {
+    console.error('[games] Error determining roulette winner:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * POST /games/:gameSessionId/roulette/spin
  * Complete a roulette game by randomly selecting a proposed meal (host only)
  */
