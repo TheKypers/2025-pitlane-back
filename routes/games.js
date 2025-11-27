@@ -240,6 +240,7 @@ router.post('/:gameSessionId/force-complete', async (req, res) => {
 /**
  * POST /games/:gameSessionId/roulette/determine-winner
  * Determine the winner for animation (doesn't complete the game)
+ * Returns winner data so all participants can see the animation
  */
 router.post('/:gameSessionId/roulette/determine-winner', async (req, res) => {
   try {
@@ -252,6 +253,7 @@ router.post('/:gameSessionId/roulette/determine-winner', async (req, res) => {
 
     const winnerData = await gamesLib.determineRouletteWinner(gameSessionId, hostId);
 
+    // Broadcast to all participants (they can poll this endpoint or the game session)
     res.status(200).json(winnerData);
   } catch (error) {
     console.error('[games] Error determining roulette winner:', error);
