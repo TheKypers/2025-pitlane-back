@@ -442,6 +442,7 @@ async function createGroupMealConsumption(consumptionData, profileId) {
                         profileId: member.profile.id,
                         mealId,
                         groupId: parseInt(groupId),
+                        type: 'group', // Mark as group-level consumption
                         source: 'group',
                         portionFraction,
                         quantity: 1,

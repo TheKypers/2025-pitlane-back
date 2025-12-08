@@ -140,10 +140,17 @@ async function getGroupById(groupId) {
             },
             mealConsumptions: {
                 where: {
-                    isActive: true
+                    isActive: true,
+                    type: 'group' // Only show group-level consumptions in group activity
                 },
                 include: {
                     meal: true,
+                    profile: {
+                        select: {
+                            id: true,
+                            username: true
+                        }
+                    },
                     foodPortions: {
                         include: {
                             food: true
