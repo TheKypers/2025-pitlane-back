@@ -609,6 +609,7 @@ async function createMealConsumptionFromVotingSession(sessionId, profileId) {
       profileId,
       mealId: session.winnerMealId,
       groupId: session.groupId,
+      type: 'group', // Group-level consumption for Recent Activity
       source: 'voting',
       votingSessionId: parseInt(sessionId),
       portionFraction: 1.0,
