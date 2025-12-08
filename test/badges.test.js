@@ -151,8 +151,7 @@ describe('Badges API', () => {
       expect(response.body).toHaveProperty('badgeId');
     });
 
-    it.skip('should clear primary badge', async () => {
-      // Skipped: API has a bug - BadgesLibrary.prisma is undefined
+    it('should clear primary badge', async () => {
       const response = await request(app)
         .put(`/badges/user/${testProfile.id}/primary`)
         .send({ badgeId: null })
