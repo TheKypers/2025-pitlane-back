@@ -216,15 +216,30 @@ async function createFood({ name, svgLink, kCal = 0, preferences = [], dietaryRe
         throw new Error('kCal cannot be less than 0');
     }
 
-    // Handle dietary restrictions
+    // Handle dietary restrictions with "For Everyone" logic:
+    // - If hasNoRestrictions is true OR dietaryRestrictions is empty, set to [0] (For Everyone)
+    // - If dietaryRestrictions contains 0 and other restrictions, remove 0 (keep only specific restrictions)
+    // - If dietaryRestrictions contains only specific restrictions, keep them as is
     let finalRestrictions = [];
-    if (!hasNoRestrictions && dietaryRestrictions.length > 0) {
-        finalRestrictions = dietaryRestrictions;
-    } else {
+    
+    if (hasNoRestrictions || dietaryRestrictions.length === 0) {
+        // No restrictions specified or explicitly marked as no restrictions -> For Everyone
         finalRestrictions = [0];
+    } else {
+        const hasForEveryone = dietaryRestrictions.includes(0);
+        const otherRestrictions = dietaryRestrictions.filter(id => id !== 0);
+        
+        if (hasForEveryone && otherRestrictions.length > 0) {
+            // Has "For Everyone" plus other restrictions -> remove "For Everyone"
+            finalRestrictions = otherRestrictions;
+        } else if (hasForEveryone && otherRestrictions.length === 0) {
+            // Only "For Everyone" -> keep it
+            finalRestrictions = [0];
+        } else {
+            // Only specific restrictions -> keep them
+            finalRestrictions = dietaryRestrictions;
+        }
     }
-    // If hasNoRestrictions is true, we leave finalRestrictions empty
-    // This means the food has no dietary restrictions and is available to everyone
 
     // Validate that all preference IDs exist
     if (preferences.length > 0) {
@@ -275,6 +290,28 @@ async function updateFood(id, { name, svgLink, kCal, preferences = [], dietaryRe
         throw new Error('kCal cannot be less than 0');
     }
 
+    // Handle "For Everyone" restriction logic:
+    // - If dietaryRestrictions is empty, set to [0] (For Everyone)
+    // - If dietaryRestrictions contains 0 and other restrictions, remove 0 (keep only specific restrictions)
+    // - If dietaryRestrictions contains only [0], keep it as [0]
+    // - If dietaryRestrictions contains other restrictions but not 0, keep them as is
+    let finalRestrictions = [...dietaryRestrictions];
+    
+    const hasForEveryone = finalRestrictions.includes(0);
+    const otherRestrictions = finalRestrictions.filter(id => id !== 0);
+    
+    if (finalRestrictions.length === 0) {
+        // Empty array means "For Everyone"
+        finalRestrictions = [0];
+    } else if (hasForEveryone && otherRestrictions.length > 0) {
+        // Has "For Everyone" plus other restrictions -> remove "For Everyone"
+        finalRestrictions = otherRestrictions;
+    } else if (hasForEveryone && otherRestrictions.length === 0) {
+        // Only "For Everyone" -> keep it
+        finalRestrictions = [0];
+    }
+    // else: no "For Everyone", only specific restrictions -> keep as is
+
     return prisma.food.update({
         where: { FoodID: foodId },
         data: {
@@ -282,7 +319,7 @@ async function updateFood(id, { name, svgLink, kCal, preferences = [], dietaryRe
             svgLink,
             ...(kCal !== undefined && { kCal }),
             preferences: { set: preferences.map(pid => ({ PreferenceID: pid })) },
-            dietaryRestrictions: { set: dietaryRestrictions.map(rid => ({ DietaryRestrictionID: rid })) }
+            dietaryRestrictions: { set: finalRestrictions.map(rid => ({ DietaryRestrictionID: rid })) }
         },
         include: { dietaryRestrictions: true, preferences: true, profile: true }
     });

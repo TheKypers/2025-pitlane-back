@@ -38,6 +38,11 @@ async function getAllGroups() {
                         where: {
                             isActive: true
                         }
+                    },
+                    mealConsumptions: {
+                        where: {
+                            isActive: true
+                        }
                     }
                 }
             }
@@ -92,6 +97,11 @@ async function getUserGroups(profileId) {
             _count: {
                 select: {
                     members: {
+                        where: {
+                            isActive: true
+                        }
+                    },
+                    mealConsumptions: {
                         where: {
                             isActive: true
                         }
