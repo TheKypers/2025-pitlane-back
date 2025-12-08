@@ -167,12 +167,10 @@ const getCalorieProgress = async (userId, date = new Date()) => {
     const endOfDay = new Date(targetDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // Obtener solo las consumptions del día específico
-    const consumptions = await prisma.consumption.findMany({
+    // Obtener meal consumptions del día específico
+    const mealConsumptions = await prisma.mealConsumption.findMany({
       where: {
         profileId: userId,
-        // Only include individual consumptions (exclude group consumptions)
-        type: 'individual',
         isActive: true,
         consumedAt: {
           gte: startOfDay,
@@ -180,71 +178,24 @@ const getCalorieProgress = async (userId, date = new Date()) => {
         }
       },
       include: {
-        consumptionMeals: {
+        meal: {
           include: {
-            meal: {
+            mealFoods: {
               include: {
-                mealFoods: {
-                  include: {
-                    food: true
-                  }
-                }
-              }
-            },
-            // Include mealPortion and its foodPortions so we can compute partial consumptions
-            mealPortion: {
-              include: {
-                foodPortions: {
-                  include: { food: true }
-                }
+                food: true
               }
             }
           }
+        },
+        foodPortions: {
+          include: { food: true }
         }
       }
     });
 
-
-
-    // Sumar todas las calorías de las comidas individuales dentro de cada consumption
-    const consumed = consumptions.reduce((total, consumption) => {
-      // Si no hay consumptionMeals, usar totalKcal como fallback
-      if (!consumption.consumptionMeals || consumption.consumptionMeals.length === 0) {
-        const fallbackKcal = consumption.totalKcal || 0;
-        return total + fallbackKcal;
-      }
-      
-      // Sumar kcal de cada comida en esta consumption
-      const consumptionKcal = consumption.consumptionMeals.reduce((consumptionTotal, consumptionMeal) => {
-        // Base meal kcal (whole meal) computed from Meal -> MealFoods
-        const baseMealKcal = consumptionMeal.meal?.mealFoods?.reduce((mealTotal, mealFood) => {
-          const foodKcal = mealFood.food?.kCal || 0;
-          const foodQuantity = mealFood.quantity || 1;
-          return mealTotal + (foodKcal * foodQuantity);
-        }, 0) || 0;
-
-        let mealTotalKcal = baseMealKcal;
-
-        // If a MealPortion with detailed FoodPortions exists, use those quantities (more precise)
-        if (consumptionMeal.mealPortion && consumptionMeal.mealPortion.foodPortions && consumptionMeal.mealPortion.foodPortions.length > 0) {
-          mealTotalKcal = consumptionMeal.mealPortion.foodPortions.reduce((mpTotal, fp) => {
-            const fpFoodKcal = fp.food?.kCal || 0;
-            const fpQuantityConsumed = fp.quantityConsumed || 0;
-            return mpTotal + (fpFoodKcal * fpQuantityConsumed);
-          }, 0);
-        } else if (consumptionMeal.mealPortion && typeof consumptionMeal.mealPortion.portionFraction === 'number') {
-          // If there's a portion fraction (e.g., 0.5 for half), scale the base meal kcal
-          mealTotalKcal = baseMealKcal * consumptionMeal.mealPortion.portionFraction;
-        }
-
-        // Multiply by the number of servings recorded in ConsumptionMeal.quantity
-        const consumptionQuantity = consumptionMeal.quantity || 1;
-        const actualKcal = mealTotalKcal * consumptionQuantity;
-
-        return consumptionTotal + actualKcal;
-      }, 0);
-      
-      return total + consumptionKcal;
+    // Sumar todas las calorías - now using totalKcal from MealConsumption directly
+    const consumed = mealConsumptions.reduce((total, consumption) => {
+      return total + (consumption.totalKcal || 0);
     }, 0);
 
     const goal = profile?.calorie_goal || 2000;

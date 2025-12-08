@@ -138,14 +138,15 @@ async function getGroupById(groupId) {
                     role: true
                 }
             },
-            consumptions: {
+            mealConsumptions: {
                 where: {
                     isActive: true
                 },
                 include: {
-                    consumptionMeals: {
+                    meal: true,
+                    foodPortions: {
                         include: {
-                            meal: true
+                            food: true
                         }
                     }
                 },
@@ -746,7 +747,7 @@ async function getUserDashboardGroups(profileId, limit = 5) {
             },
             _count: {
                 select: {
-                    consumptions: {
+                    mealConsumptions: {
                         where: {
                             isActive: true,
                             consumedAt: {

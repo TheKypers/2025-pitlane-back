@@ -3,7 +3,8 @@ const prisma = new PrismaClient();
 const BadgesLibrary = require('./badgesLib');
 
 /**
- * Create group and individual consumption records for a completed game
+ * Create group-level consumption record for a completed game
+ * Individual consumptions are created only when participants select their portions
  */
 async function recordGroupConsumptionForGame(session) {
   try {
@@ -18,45 +19,34 @@ async function recordGroupConsumptionForGame(session) {
     const name = `${session.winningMeal.name} (Game: ${session.gameType})`;
     const description = `Chosen from ${session.gameType} game session #${session.GameSessionID}`;
 
-    // Create group consumption
-    const groupConsumption = await prisma.consumption.create({
+    // Create a single group-level consumption record
+    // This shows in group activity but NOT in individual histories
+    // Individual consumptions are created when users select their portions
+    await prisma.mealConsumption.create({
       data: {
         name,
-        description,
-        type: 'group',
-        profileId: session.hostId, // recorded by host
+        description: `Group game consumption: ${description}`,
+        profileId: session.hostId, // Use game host as the representative
+        mealId: session.winningMealId,
         groupId: groupId,
+        type: 'group', // Group-level record
+        source: 'game',
+        gameSessionId: session.GameSessionID,
+        portionFraction: 1.0,
+        quantity: 1,
         totalKcal: Math.round(totalKcal),
         consumedAt: session.endTime || new Date(),
-        consumptionMeals: {
-          create: [{
-            mealId: session.winningMealId,
-            quantity: 1
-          }]
+        foodPortions: {
+          create: session.winningMeal.mealFoods.map(mf => ({
+            foodId: mf.foodId,
+            portionFraction: 1.0,
+            quantityConsumed: mf.quantity
+          }))
         }
       }
     });
 
-    // Create individual consumptions for each active group member
-    const memberIds = session.group.members.map(m => m.profileId);
-    await Promise.all(memberIds.map(profileId =>
-      prisma.consumption.create({
-        data: {
-          name: `${session.winningMeal.name} (Group: ${groupConsumption.groupId})`,
-          description: `Individual consumption from game session #${session.GameSessionID}`,
-          type: 'individual',
-          profileId,
-          totalKcal: Math.round(totalKcal),
-          consumedAt: session.endTime || new Date(),
-          consumptionMeals: {
-            create: [{
-              mealId: session.winningMealId,
-              quantity: 1
-            }]
-          }
-        }
-      })
-    ));
+    console.log(`[gamesLib] Created group-level consumption for game #${session.GameSessionID}`);
   } catch (err) {
     console.error('[gamesLib] Error recording group consumption for game:', err);
   }

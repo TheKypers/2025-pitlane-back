@@ -156,11 +156,13 @@ async function getGameSessionDetails(sessionId) {
     return null;
   }
 
-  // Fetch meal portions for game session
-  const mealPortions = await prisma.mealPortion.findMany({
+  // Fetch meal consumptions for game session
+  // Only fetch individual portion selections (type = 'individual') to check if user selected their portion
+  const mealConsumptions = await prisma.mealConsumption.findMany({
     where: {
       gameSessionId: parseInt(sessionId),
-      source: 'game'
+      source: 'game',
+      type: 'individual' // Only individual portion selections, not group-level records
     },
     include: {
       profile: {
@@ -178,20 +180,20 @@ async function getGameSessionDetails(sessionId) {
     }
   });
 
-  // Group portions by profile ID
-  const portionsByProfile = {};
-  mealPortions.forEach(portion => {
-    if (!portionsByProfile[portion.profileId]) {
-      portionsByProfile[portion.profileId] = [];
+  // Group consumptions by profile ID
+  const consumptionsByProfile = {};
+  mealConsumptions.forEach(consumption => {
+    if (!consumptionsByProfile[consumption.profileId]) {
+      consumptionsByProfile[consumption.profileId] = [];
     }
-    portionsByProfile[portion.profileId].push(portion);
+    consumptionsByProfile[consumption.profileId].push(consumption);
   });
 
   // Format participant data
   const participants = session.participants.map(participant => {
-    const participantPortions = portionsByProfile[participant.profileId] || [];
-    const hasSelectedPortion = participantPortions.length > 0;
-    const portionFraction = hasSelectedPortion ? participantPortions[0].portionFraction : undefined;
+    const participantConsumptions = consumptionsByProfile[participant.profileId] || [];
+    const hasSelectedPortion = participantConsumptions.length > 0;
+    const portionFraction = hasSelectedPortion ? participantConsumptions[0].portionFraction : undefined;
     
     return {
       participantId: participant.GameParticipantID,
@@ -217,13 +219,14 @@ async function getGameSessionDetails(sessionId) {
       submittedAt: participant.submittedAt,
       hasSelectedPortion,
       portionFraction,
-      // Meal portions consumed
-      mealPortions: participantPortions.map(mp => ({
-        mealId: mp.mealId,
-        mealName: mp.meal.name,
-        mealPortionId: mp.MealPortionID,
-        consumedAt: mp.consumedAt,
-        foodPortions: mp.foodPortions.map(fp => ({
+      // Meal consumptions
+      mealConsumptions: participantConsumptions.map(mc => ({
+        mealId: mc.mealId,
+        mealName: mc.meal.name,
+        mealConsumptionId: mc.MealConsumptionID,
+        consumedAt: mc.consumedAt,
+        totalKcal: mc.totalKcal,
+        foodPortions: mc.foodPortions.map(fp => ({
           foodId: fp.foodId,
           name: fp.food.name,
           portionFraction: fp.portionFraction,
@@ -321,30 +324,44 @@ async function registerGameMealPortion(sessionId, profileId, mealId, portionData
     throw new Error('Game session does not have a winning meal');
   }
 
-  // Check if portion already exists for this user and game session
-  const existingPortion = await prisma.mealPortion.findFirst({
+  // Check if INDIVIDUAL consumption already exists for this user and game session
+  // Don't find the group-level consumption - we only want to update individual portions
+  const existingConsumption = await prisma.mealConsumption.findFirst({
     where: {
       profileId: profileId,
       gameSessionId: parseInt(sessionId),
-      source: 'game'
+      source: 'game',
+      type: 'individual' // Only find individual portion selections, not group consumption
     }
   });
 
-  let mealPortion;
-  if (existingPortion) {
-    // Update existing portion
+  // Calculate total calories from selected portions
+  const totalCalories = session.winningMeal.mealFoods.reduce((sum, mealFood) => {
+    const foodPortion = foodPortions.find(fp => fp.foodId === mealFood.foodId);
+    const portionFraction = foodPortion ? parseFloat(foodPortion.portionFraction) : mealPortionFraction;
+    const quantityConsumed = mealFood.quantity * portionFraction;
+    return sum + (mealFood.food.kCal * quantityConsumed);
+  }, 0);
+
+  let mealConsumption;
+  if (existingConsumption) {
+    // Delete existing food portions
     await prisma.foodPortion.deleteMany({
-      where: { mealPortionId: existingPortion.MealPortionID }
+      where: { mealConsumptionId: existingConsumption.MealConsumptionID }
     });
 
-    mealPortion = await prisma.mealPortion.update({
-      where: { MealPortionID: existingPortion.MealPortionID },
+    // Update existing meal consumption
+    mealConsumption = await prisma.mealConsumption.update({
+      where: { MealConsumptionID: existingConsumption.MealConsumptionID },
       data: {
+        name: `${session.winningMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
+        description: `From ${formatGameType(session.gameType)} game - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
+        type: 'individual', // Individual portion selection
         portionFraction: parseFloat(mealPortionFraction),
+        totalKcal: Math.round(totalCalories),
         consumedAt: new Date(),
         foodPortions: {
           create: foodPortions.map(fp => {
-            // Find the original meal food to calculate quantity consumed
             const originalFood = session.winningMeal?.mealFoods.find(mf => mf.foodId === fp.foodId);
             const quantityConsumed = originalFood 
               ? originalFood.quantity * fp.portionFraction 
@@ -366,19 +383,25 @@ async function registerGameMealPortion(sessionId, profileId, mealId, portionData
         }
       }
     });
+    console.log('[Game History] Updated meal consumption:', mealConsumption.MealConsumptionID);
   } else {
-    // Create new portion
-    mealPortion = await prisma.mealPortion.create({
+    // Create new individual meal consumption (no groupId - this is personal consumption)
+    mealConsumption = await prisma.mealConsumption.create({
       data: {
+        name: `${session.winningMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
+        description: `From ${formatGameType(session.gameType)} game - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
         profileId: profileId,
         mealId: parseInt(mealId),
+        groupId: null, // Individual consumption from game portion selection
+        type: 'individual', // Individual portion selection
         source: 'game',
         gameSessionId: parseInt(sessionId),
         portionFraction: parseFloat(mealPortionFraction),
+        quantity: 1,
+        totalKcal: Math.round(totalCalories),
         consumedAt: new Date(),
         foodPortions: {
           create: foodPortions.map(fp => {
-            // Find the original meal food to calculate quantity consumed
             const originalFood = session.winningMeal?.mealFoods.find(mf => mf.foodId === fp.foodId);
             const quantityConsumed = originalFood 
               ? originalFood.quantity * fp.portionFraction 
@@ -400,69 +423,10 @@ async function registerGameMealPortion(sessionId, profileId, mealId, portionData
         }
       }
     });
+    console.log('[Game History] Created meal consumption:', mealConsumption.MealConsumptionID, 'with', totalCalories, 'kCal');
   }
 
-  // Create or update individual consumption for the user based on selected portions
-  try {
-    // Calculate total calories from selected portions
-    const totalCalories = session.winningMeal.mealFoods.reduce((sum, mealFood) => {
-      const foodPortion = foodPortions.find(fp => fp.foodId === mealFood.foodId);
-      const portionFraction = foodPortion ? parseFloat(foodPortion.portionFraction) : mealPortionFraction;
-      const quantityConsumed = mealFood.quantity * portionFraction;
-      return sum + (mealFood.food.kCal * quantityConsumed / mealFood.quantity);
-    }, 0);
-
-    // Check if consumption already exists for this meal portion
-    const existingConsumption = await prisma.consumption.findFirst({
-      where: {
-        profileId: profileId,
-        consumptionMeals: {
-          some: {
-            mealPortionId: mealPortion.MealPortionID
-          }
-        }
-      }
-    });
-
-    if (existingConsumption) {
-      // Update existing consumption
-      await prisma.consumption.update({
-        where: { ConsumptionID: existingConsumption.ConsumptionID },
-        data: {
-          name: `${session.winningMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
-          description: `From ${formatGameType(session.gameType)} game - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
-          totalKcal: Math.round(totalCalories)
-        }
-      });
-      console.log('[Game History] Updated consumption:', existingConsumption.ConsumptionID);
-    } else {
-      // Create new consumption record with ConsumptionMeal linked to MealPortion
-      const consumption = await prisma.consumption.create({
-        data: {
-          profileId: profileId,
-          name: `${session.winningMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
-          description: `From ${formatGameType(session.gameType)} game - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
-          type: 'individual',
-          totalKcal: Math.round(totalCalories),
-          consumptionMeals: {
-            create: {
-              mealId: session.winningMealId,
-              mealPortionId: mealPortion.MealPortionID,
-              quantity: 1
-            }
-          }
-        }
-      });
-
-      console.log('[Game History] Created consumption:', consumption.ConsumptionID, 'with', totalCalories, 'kCal, linked to MealPortion:', mealPortion.MealPortionID);
-    }
-  } catch (consumptionError) {
-    console.error('[Game History] Error creating/updating consumption:', consumptionError);
-    // Don't fail the whole operation if consumption creation fails
-    // The portion selection is still saved
-  }
-
-  return mealPortion;
+  return mealConsumption;
 }
 
 module.exports = {

@@ -1291,101 +1291,19 @@ async function getConfirmationStatus(votingSessionId) {
         }
     };
 }
+
+/**
+ * Create meal consumption from voting session (DEPRECATED - use votingHistoryLib)
+ * This function is maintained for backward compatibility but consumption creation
+ * is now handled by votingHistoryLib.createMealConsumptionFromVotingSession
+ */
 async function createGroupConsumptionFromVote(votingSessionId, consumptionData) {
-    const session = await prisma.votingSession.findUnique({
-        where: { VotingSessionID: parseInt(votingSessionId) },
-        include: {
-            winnerMeal: {
-                include: {
-                    mealFoods: {
-                        include: {
-                            food: true
-                        }
-                    }
-                }
-            },
-            group: true
-        }
-    });
-
-    if (!session) {
-        throw new Error('Voting session not found');
-    }
-
-    if (session.status !== 'completed') {
-        throw new Error('Voting session is not completed yet');
-    }
-
-    if (!session.winnerMeal) {
-        throw new Error('No winner meal found for this voting session');
-    }
-
-    // Calculate total kcal for the winning meal
-    const totalKcal = session.winnerMeal.mealFoods.reduce((sum, mealFood) => 
-        sum + (mealFood.food.kCal * mealFood.quantity), 0
+    // Redirect to the new implementation in votingHistoryLib
+    const votingHistoryLib = require('./votingHistoryLib');
+    return await votingHistoryLib.createMealConsumptionFromVotingSession(
+        votingSessionId,
+        consumptionData.profileId
     );
-
-    // Create the group consumption
-    const consumption = await prisma.consumption.create({
-        data: {
-            name: consumptionData.name || session.winnerMeal.name,
-            description: consumptionData.description || `Group meal from voting session: ${session.title}`,
-            type: 'group',
-            profileId: consumptionData.profileId,
-            groupId: session.groupId,
-            totalKcal,
-            consumedAt: consumptionData.consumedAt ? new Date(consumptionData.consumedAt) : new Date(),
-            consumptionMeals: {
-                create: [{
-                    mealId: session.winnerMealId,
-                    quantity: consumptionData.quantity || 1
-                }]
-            }
-        },
-        include: {
-            consumptionMeals: {
-                include: {
-                    meal: {
-                        include: {
-                            profile: {
-                                select: {
-                                    id: true,
-                                    username: true,
-                                    role: true
-                                }
-                            },
-                            mealFoods: {
-                                include: {
-                                    food: {
-                                        include: {
-                                            dietaryRestrictions: true,
-                                            preferences: true
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            profile: {
-                select: {
-                    id: true,
-                    username: true,
-                    role: true
-                }
-            },
-            group: {
-                select: {
-                    GroupID: true,
-                    name: true,
-                    description: true
-                }
-            }
-        }
-    });
-
-    return consumption;
 }
 
 /**

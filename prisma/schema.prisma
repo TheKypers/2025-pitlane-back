@@ -31,7 +31,6 @@ model Profile {
   foods              Food[]               @relation("profile_food")
   groupMemberships   GroupMember[]        @relation("profile_groupmember")
   createdGroups      Group[]              @relation("profile_createdgroup")
-  consumptions       Consumption[]        @relation("profile_consumption")
   sentInvitations    GroupInvitation[]    @relation("profile_sentinvitation")
   receivedInvitations GroupInvitation[]   @relation("profile_receivedinvitation")
   initiatedVotingSessions VotingSession[] @relation("profile_votingsession")
@@ -45,7 +44,7 @@ model Profile {
   hostedGames      GameSession[]    @relation("profile_hostedgame")
   wonGames         GameSession[]    @relation("profile_wongame")
   gameParticipations GameParticipant[] @relation("profile_gameparticipant")
-  mealPortions     MealPortion[]    @relation("profile_mealportion")
+  mealConsumptions MealConsumption[] @relation("profile_mealconsumption")
 
   @@map("profile")
 }
@@ -91,12 +90,11 @@ model Meal {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   profileId   String     @db.Uuid
-  profile     Profile    @relation("profile_meal", fields: [profileId], references: [id], onDelete: Cascade)
+  profile             Profile              @relation("profile_meal", fields: [profileId], references: [id], onDelete: Cascade)
   mealFoods   MealFood[] @relation("meal_mealfood")
-  consumptionMeals ConsumptionMeal[] @relation("meal_consumptionmeal")
   votingSessionsWon VotingSession[] @relation("meal_votingsession")
   mealProposals MealProposal[] @relation("meal_mealproposal")
-  mealPortions MealPortion[] @relation("meal_mealportion")
+  mealConsumptions MealConsumption[] @relation("meal_mealconsumption")
   gameProposals GameParticipant[] @relation("meal_gameproposal")
   gameSessionsWon GameSession[] @relation("meal_gamewinner")
 
@@ -148,6 +146,7 @@ enum ConsumptionSource {
   individual  // Manually logged individual consumption
   voting      // From a voting session
   game        // From a game session
+  group       // Group meal consumption
 }
 
 model Group {
@@ -160,10 +159,10 @@ model Group {
   isActive    Boolean       @default(true) // for soft deletion
   creator     Profile       @relation("profile_createdgroup", fields: [createdBy], references: [id], onDelete: Cascade)
   members     GroupMember[] @relation("group_groupmember")
-  consumptions Consumption[] @relation("group_consumption")
   invitations GroupInvitation[] @relation("group_invitation")
   votingSessions VotingSession[] @relation("group_votingsession")
   gameSessions GameSession[] @relation("group_gamesession")
+  mealConsumptions MealConsumption[] @relation("group_mealconsumption")
 
   @@map("group")
 }
@@ -180,38 +179,6 @@ model GroupMember {
 
   @@unique([groupId, profileId]) // prevents duplicate memberships
   @@map("groupmember")
-}
-
-model Consumption {
-  ConsumptionID   Int            @id @default(autoincrement())
-  name            String
-  description     String?
-  type            ConsumptionType
-  consumedAt      DateTime       @default(now()) // when the consumption actually happened
-  recordedAt      DateTime       @default(now()) // when it was recorded in the system
-  profileId       String         @db.Uuid // who recorded the consumption
-  groupId         Int?           // null for individual consumptions
-  totalKcal       Int            @default(0) @db.Integer
-  isActive        Boolean        @default(true) // for soft deletion
-  profile         Profile        @relation("profile_consumption", fields: [profileId], references: [id], onDelete: Cascade)
-  group           Group?         @relation("group_consumption", fields: [groupId], references: [GroupID], onDelete: SetNull)
-  consumptionMeals ConsumptionMeal[] @relation("consumption_consumptionMeal")
-
-  @@map("consumption")
-}
-
-model ConsumptionMeal {
-  ConsumptionMealID Int          @id @default(autoincrement())
-  consumptionId     Int
-  mealId            Int
-  mealPortionId     Int?         // optional link to portion details (for partial consumption)
-  quantity          Int          @default(1) // number of servings of this meal consumed
-  consumption       Consumption  @relation("consumption_consumptionMeal", fields: [consumptionId], references: [ConsumptionID], onDelete: Cascade)
-  meal              Meal         @relation("meal_consumptionmeal", fields: [mealId], references: [MealID], onDelete: Cascade)
-  mealPortion       MealPortion? @relation("consumptionmeal_mealportion", fields: [mealPortionId], references: [MealPortionID], onDelete: SetNull)
-
-  @@unique([consumptionId, mealId]) // prevents duplicate meal entries in the same consumption
-  @@map("consumptionmeal")
 }
 
 model GroupInvitation {
@@ -254,7 +221,7 @@ model VotingSession {
   proposalConfirmations UserProposalConfirmation[] @relation("votingsession_proposalconfirmation")
   voteConfirmations UserVoteConfirmation[] @relation("votingsession_voteconfirmation")
   participants    VotingSessionParticipant[] @relation("votingsession_participant")
-  mealPortions    MealPortion[]          @relation("votingsession_mealportion")
+  mealConsumptions MealConsumption[]          @relation("votingsession_mealconsumption")
   
   @@map("votingsession")
 }
@@ -334,39 +301,47 @@ model VotingSessionParticipant {
   @@map("votingsessionparticipant")
 }
 
-// Universal meal portion table - tracks ALL meal consumptions (individual, voting, game)
-model MealPortion {
-  MealPortionID       Int                        @id @default(autoincrement())
-  profileId           String                     @db.Uuid // who consumed this meal (required)
+// Universal meal consumption table - tracks ALL meal consumptions (individual, voting, game, group)
+model MealConsumption {
+  MealConsumptionID   Int                        @id @default(autoincrement())
+  name                String                     // Name/title of consumption
+  description         String?                    // Optional description
+  profileId           String                     @db.Uuid // who consumed/recorded this meal (required)
   mealId              Int                        // which meal was consumed
-  source              ConsumptionSource          @default(individual) // where this portion came from
+  groupId             Int?                       // null for individual consumptions, set for group consumptions
+  type                ConsumptionType            @default(individual) // individual or group (defines scope)
+  source              ConsumptionSource          @default(individual) // where this consumption came from
   votingSessionId     Int?                       // if from voting, which session
   gameSessionId       Int?                       // if from game, which game session
   portionFraction     Float                      @default(1.0) // 1.0 = whole, 0.5 = half, 0.25 = quarter, etc.
-  consumedAt          DateTime                   @default(now())
+  quantity            Int                        @default(1) // number of servings consumed
+  totalKcal           Int                        @default(0) @db.Integer // total calories for this consumption
+  consumedAt          DateTime                   @default(now()) // when the consumption actually happened
+  recordedAt          DateTime                   @default(now()) // when it was recorded in the system
   createdAt           DateTime                   @default(now())
-  profile             Profile                    @relation("profile_mealportion", fields: [profileId], references: [id], onDelete: Cascade)
-  meal                Meal                       @relation("meal_mealportion", fields: [mealId], references: [MealID], onDelete: Cascade)
-  votingSession       VotingSession?             @relation("votingsession_mealportion", fields: [votingSessionId], references: [VotingSessionID], onDelete: SetNull)
-  gameSession         GameSession?               @relation("gamesession_mealportion", fields: [gameSessionId], references: [GameSessionID], onDelete: SetNull)
-  foodPortions        FoodPortion[]              @relation("mealportion_foodportion")
-  consumptionMeals    ConsumptionMeal[]          @relation("consumptionmeal_mealportion")
+  isActive            Boolean                    @default(true) // for soft deletion
+  profile             Profile                    @relation("profile_mealconsumption", fields: [profileId], references: [id], onDelete: Cascade)
+  meal                Meal                       @relation("meal_mealconsumption", fields: [mealId], references: [MealID], onDelete: Cascade)
+  group               Group?                     @relation("group_mealconsumption", fields: [groupId], references: [GroupID], onDelete: SetNull)
+  votingSession       VotingSession?             @relation("votingsession_mealconsumption", fields: [votingSessionId], references: [VotingSessionID], onDelete: SetNull)
+  gameSession         GameSession?               @relation("gamesession_mealconsumption", fields: [gameSessionId], references: [GameSessionID], onDelete: SetNull)
+  foodPortions        FoodPortion[]              @relation("mealconsumption_foodportion")
   
-  @@map("mealportion")
+  @@map("mealconsumption")
 }
 
 // Tracks what portion of each food/ingredient the participant consumed
 model FoodPortion {
-  FoodPortionID    Int          @id @default(autoincrement())
-  mealPortionId    Int
-  foodId           Int
-  portionFraction  Float        @default(1.0) // what fraction of this specific food they consumed
-  quantityConsumed Float        // calculated: original quantity * portionFraction
-  createdAt        DateTime     @default(now())
-  mealPortion      MealPortion  @relation("mealportion_foodportion", fields: [mealPortionId], references: [MealPortionID], onDelete: Cascade)
-  food             Food         @relation("food_foodportion", fields: [foodId], references: [FoodID], onDelete: Cascade)
+  FoodPortionID      Int              @id @default(autoincrement())
+  mealConsumptionId  Int
+  foodId             Int
+  portionFraction    Float            @default(1.0) // what fraction of this specific food they consumed
+  quantityConsumed   Float            // calculated: original quantity * portionFraction
+  createdAt          DateTime         @default(now())
+  mealConsumption    MealConsumption  @relation("mealconsumption_foodportion", fields: [mealConsumptionId], references: [MealConsumptionID], onDelete: Cascade)
+  food               Food             @relation("food_foodportion", fields: [foodId], references: [FoodID], onDelete: Cascade)
   
-  @@unique([mealPortionId, foodId]) // one food portion per meal portion per food
+  @@unique([mealConsumptionId, foodId]) // one food portion per meal consumption per food
   @@map("foodportion")
 }
 
@@ -470,7 +445,7 @@ model GameSession {
   winner          Profile?  @relation("profile_wongame", fields: [winnerId], references: [id], onDelete: SetNull)
   winningMeal     Meal?     @relation("meal_gamewinner", fields: [winningMealId], references: [MealID], onDelete: SetNull)
   participants    GameParticipant[] @relation("gamesession_participant")
-  mealPortions    MealPortion[] @relation("gamesession_mealportion")
+  mealConsumptions MealConsumption[] @relation("gamesession_mealconsumption")
 
   @@map("gamesession")
 }
