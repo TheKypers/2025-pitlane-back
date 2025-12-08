@@ -91,11 +91,7 @@ describe('Calorie Progress API', () => {
   afterAll(async () => {
     try {
       // Clean up test data
-      await prisma.consumptionMeal.deleteMany({
-        where: { consumption: { profileId: testProfileId } }
-      });
-      
-      await prisma.consumption.deleteMany({
+      await prisma.mealConsumption.deleteMany({
         where: { profileId: testProfileId }
       });
 
@@ -136,43 +132,33 @@ describe('Calorie Progress API', () => {
     it('should calculate consumed calories only for the specific day', async () => {
       // Create consumptions for today
       const today = new Date();
-      const todayConsumption = await prisma.consumption.create({
+      const todayConsumption = await prisma.mealConsumption.create({
         data: {
-          name: 'Today Consumption',
+          name: 'Test Today Consumption',
           type: 'individual',
           consumedAt: today,
           profileId: testProfileId,
-          totalKcal: 0
-        }
-      });
-
-      // Add meal to today's consumption
-      await prisma.consumptionMeal.create({
-        data: {
-          consumptionId: todayConsumption.ConsumptionID,
           mealId: 1000,
-          quantity: 1 // 1 * 400 kcal = 400 kcal
+          portionFraction: 1.0,
+          totalKcal: 400,
+          source: 'individual'
         }
       });
 
       // Create consumption for yesterday (should not be included)
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayConsumption = await prisma.consumption.create({
+      const yesterdayConsumption = await prisma.mealConsumption.create({
         data: {
-          name: 'Yesterday Consumption',
+          name: 'Test Yesterday Consumption',
           type: 'individual',
           consumedAt: yesterday,
           profileId: testProfileId,
-          totalKcal: 0
-        }
-      });
-
-      await prisma.consumptionMeal.create({
-        data: {
-          consumptionId: yesterdayConsumption.ConsumptionID,
           mealId: 1000,
-          quantity: 2 // 2 * 400 kcal = 800 kcal (should not be counted)
+          portionFraction: 2,
+          quantity: 1,
+          totalKcal: 800, // 2 * 400 kcal
+          source: 'individual'
         }
       });
 
@@ -189,18 +175,10 @@ describe('Calorie Progress API', () => {
       expect(yesterdayProgress.date).toBe(yesterday.toISOString().split('T')[0]);
 
       // Clean up
-      await prisma.consumptionMeal.deleteMany({
+      await prisma.mealConsumption.deleteMany({
         where: {
-          consumptionId: {
-            in: [todayConsumption.ConsumptionID, yesterdayConsumption.ConsumptionID]
-          }
-        }
-      });
-      
-      await prisma.consumption.deleteMany({
-        where: {
-          ConsumptionID: {
-            in: [todayConsumption.ConsumptionID, yesterdayConsumption.ConsumptionID]
+          MealConsumptionID: {
+            in: [todayConsumption.MealConsumptionID, yesterdayConsumption.MealConsumptionID]
           }
         }
       });
@@ -210,21 +188,16 @@ describe('Calorie Progress API', () => {
       const today = new Date();
       
       // Create first consumption
-      const consumption1 = await prisma.consumption.create({
+      const consumption1 = await prisma.mealConsumption.create({
         data: {
-          name: 'Breakfast',
+          name: 'Test Consumption 1',
           type: 'individual',
           consumedAt: today,
           profileId: testProfileId,
-          totalKcal: 0
-        }
-      });
-
-      await prisma.consumptionMeal.create({
-        data: {
-          consumptionId: consumption1.ConsumptionID,
           mealId: 1000,
-          quantity: 1 // 400 kcal
+          portionFraction: 1.0,
+          totalKcal: 400,
+          source: 'individual'
         }
       });
 
@@ -232,21 +205,17 @@ describe('Calorie Progress API', () => {
       const lunchTime = new Date(today);
       lunchTime.setHours(14, 0, 0, 0);
       
-      const consumption2 = await prisma.consumption.create({
+      const consumption2 = await prisma.mealConsumption.create({
         data: {
-          name: 'Lunch',
+          name: 'Test Consumption 2',
           type: 'individual',
           consumedAt: lunchTime,
           profileId: testProfileId,
-          totalKcal: 0
-        }
-      });
-
-      await prisma.consumptionMeal.create({
-        data: {
-          consumptionId: consumption2.ConsumptionID,
           mealId: 1000,
-          quantity: 2 // 800 kcal
+          portionFraction: 2,
+          quantity: 1,
+          totalKcal: 800,
+          source: 'individual'
         }
       });
 
@@ -255,18 +224,10 @@ describe('Calorie Progress API', () => {
       expect(progress.goal).toBe(2000);
 
       // Clean up
-      await prisma.consumptionMeal.deleteMany({
+      await prisma.mealConsumption.deleteMany({
         where: {
-          consumptionId: {
-            in: [consumption1.ConsumptionID, consumption2.ConsumptionID]
-          }
-        }
-      });
-      
-      await prisma.consumption.deleteMany({
-        where: {
-          ConsumptionID: {
-            in: [consumption1.ConsumptionID, consumption2.ConsumptionID]
+          MealConsumptionID: {
+            in: [consumption1.MealConsumptionID, consumption2.MealConsumptionID]
           }
         }
       });
@@ -276,40 +237,31 @@ describe('Calorie Progress API', () => {
       const today = new Date();
       
       // Create individual consumption
-      const individualConsumption = await prisma.consumption.create({
+      const individualConsumption = await prisma.mealConsumption.create({
         data: {
-          name: 'Individual Meal',
+          name: 'Test Individual Consumption',
           type: 'individual',
           consumedAt: today,
           profileId: testProfileId,
-          totalKcal: 0
-        }
-      });
-
-      await prisma.consumptionMeal.create({
-        data: {
-          consumptionId: individualConsumption.ConsumptionID,
           mealId: 1000,
-          quantity: 1 // 400 kcal
+          portionFraction: 1.0,
+          totalKcal: 400,
+          source: 'individual'
         }
       });
 
       // Create group consumption (should not be included)
-      const groupConsumption = await prisma.consumption.create({
+      const groupConsumption2 = await prisma.mealConsumption.create({
         data: {
-          name: 'Group Meal',
+          name: 'Test Group Consumption',
           type: 'group',
           consumedAt: today,
           profileId: testProfileId,
-          totalKcal: 0
-        }
-      });
-
-      await prisma.consumptionMeal.create({
-        data: {
-          consumptionId: groupConsumption.ConsumptionID,
           mealId: 1000,
-          quantity: 3 // 1200 kcal (should not be counted)
+          portionFraction: 3,
+          quantity: 1,
+          totalKcal: 1200, // 3 * 400 kcal (should not be counted)
+          source: 'group'
         }
       });
 
@@ -318,18 +270,10 @@ describe('Calorie Progress API', () => {
       expect(progress.goal).toBe(2000);
 
       // Clean up
-      await prisma.consumptionMeal.deleteMany({
+      await prisma.mealConsumption.deleteMany({
         where: {
-          consumptionId: {
-            in: [individualConsumption.ConsumptionID, groupConsumption.ConsumptionID]
-          }
-        }
-      });
-      
-      await prisma.consumption.deleteMany({
-        where: {
-          ConsumptionID: {
-            in: [individualConsumption.ConsumptionID, groupConsumption.ConsumptionID]
+          MealConsumptionID: {
+            in: [individualConsumption.MealConsumptionID, groupConsumption2.MealConsumptionID]
           }
         }
       });

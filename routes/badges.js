@@ -258,4 +258,60 @@ router.post('/award-retroactive/:profileId', async (req, res) => {
   }
 });
 
+
+/**
+ * POST /badges/track
+ * Track badge progress for a specific action
+ */
+router.post('/track', async (req, res) => {
+  try {
+    const { profileId, action, metadata } = req.body;
+    if (!profileId || !action) {
+      return res.status(400).json({ error: 'Missing required fields: profileId, action' });
+    }
+    const result = await BadgesLibrary.checkAndAwardBadges(profileId, action, metadata);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error tracking badge progress:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
+/**
+ * PUT /badges/user/:profileId/primary
+ * Set or clear the primary badge for a user
+ */
+router.put('/user/:profileId/primary', async (req, res) => {
+  try {
+    const { profileId } = req.params;
+    const { badgeId } = req.body;
+    if (badgeId === null || badgeId === undefined) {
+      await BadgesLibrary.prisma.userBadge.updateMany({
+        where: { profileId, isPrimary: true },
+        data: { isPrimary: false }
+      });
+      return res.status(200).json({ message: 'Primary badge cleared' });
+    }
+    await BadgesLibrary.prisma.userBadge.updateMany({
+      where: { profileId, isPrimary: true },
+      data: { isPrimary: false }
+    });
+    const userBadge = await BadgesLibrary.prisma.userBadge.findFirst({
+      where: { profileId, badgeId: parseInt(badgeId) }
+    });
+    if (!userBadge) {
+      return res.status(404).json({ error: 'Badge not found for this user' });
+    }
+    const updatedBadge = await BadgesLibrary.prisma.userBadge.update({
+      where: { UserBadgeID: userBadge.UserBadgeID },
+      data: { isPrimary: true },
+      include: { badge: true }
+    });
+    res.status(200).json(updatedBadge);
+  } catch (error) {
+    console.error('Error setting primary badge:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
 module.exports = router;

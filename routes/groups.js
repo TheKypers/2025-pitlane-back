@@ -498,4 +498,20 @@ router.get('/dashboard/:userId', async (req, res) => {
     }
 });
 
+
+/**
+ * GET /groups/user/:profileId
+ * Get all groups for a specific user
+ */
+router.get('/user/:profileId', async (req, res) => {
+  try {
+    const { profileId } = req.params;
+    const groups = await groupsLib.getUserGroups(profileId);
+    res.status(200).json(groups);
+  } catch (error) {
+    console.error('[groups] Error getting user groups:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

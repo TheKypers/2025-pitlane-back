@@ -3,6 +3,44 @@ const router = express.Router();
 const gamesLib = require('../controllers/gamesLib');
 
 /**
+ * POST /games
+ * Create a new game session
+ */
+router.post('/', async (req, res) => {
+  try {
+    const { groupId, hostId, gameType, duration, minPlayers } = req.body;
+
+    if (!groupId || !hostId || !gameType) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: groupId, hostId, gameType' 
+      });
+    }
+
+    if (!['egg_clicker', 'roulette'].includes(gameType)) {
+      return res.status(400).json({ 
+        error: 'Invalid game type. Must be egg_clicker or roulette' 
+      });
+    }
+
+    const gameSession = await gamesLib.createGameSession(
+      groupId, 
+      hostId, 
+      gameType, 
+      duration,
+      minPlayers
+    );
+
+    res.status(201).json(gameSession);
+  } catch (error) {
+    console.error('[games] Error creating game session:', error);
+    if (error.message.includes('already an active game')) {
+      return res.status(400).json({ error: error.message });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * POST /games/create
  * Create a new game session
  */
@@ -33,6 +71,9 @@ router.post('/create', async (req, res) => {
     res.status(201).json(gameSession);
   } catch (error) {
     console.error('[games] Error creating game session:', error);
+    if (error.message.includes('already an active game')) {
+      return res.status(400).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -59,6 +100,9 @@ router.post('/:gameSessionId/join', async (req, res) => {
     res.status(200).json(participant);
   } catch (error) {
     console.error('[games] Error joining game:', error);
+    if (error.message.includes('Cannot join game')) {
+      return res.status(400).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -205,7 +249,7 @@ router.get('/group/:groupId/active', async (req, res) => {
     const gameSession = await gamesLib.getActiveGameSession(groupId);
 
     if (!gameSession) {
-      return res.status(404).json({ error: 'No active game session found' });
+      return res.status(200).json(null);
     }
 
     res.status(200).json(gameSession);
@@ -306,4 +350,73 @@ router.delete('/:gameSessionId', async (req, res) => {
   }
 });
 
+// Convenience aliases for simpler REST patterns (used by tests)
+router.post('/:id/ready', (req, res) => {
+  req.params.gameSessionId = req.params.id;
+  return router.stack.find(layer => layer.route?.path === '/:gameSessionId/ready').route.stack[0].handle(req, res);
+});
+
+router.post('/:id/start', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { hostId } = req.body;
+
+    if (!hostId) {
+      return res.status(400).json({ error: 'Missing required field: hostId' });
+    }
+
+    // Start countdown then immediately start playing
+    await gamesLib.startGameCountdown(id, hostId);
+    const gameSession = await gamesLib.startGamePlaying(id);
+
+    res.status(200).json(gameSession);
+  } catch (error) {
+    console.error('[games] Error starting game:', error);
+    if (error.message.includes('Only the host')) {
+      return res.status(403).json({ error: error.message });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/:id/submit', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { profileId, clickCount } = req.body;
+
+    if (!profileId || clickCount === undefined) {
+      return res.status(400).json({ error: 'Missing required fields: profileId, clickCount' });
+    }
+
+    const participant = await gamesLib.submitClickCount(id, profileId, clickCount);
+
+    res.status(200).json(participant);
+  } catch (error) {
+    console.error('[games] Error submitting clicks:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/:id/cancel', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { hostId } = req.body;
+
+    if (!hostId) {
+      return res.status(400).json({ error: 'Missing required field: hostId' });
+    }
+
+    const gameSession = await gamesLib.cancelGameSession(id, hostId);
+
+    res.status(200).json(gameSession);
+  } catch (error) {
+    console.error('[games] Error cancelling game:', error);
+    if (error.message.includes('Only the host')) {
+      return res.status(403).json({ error: error.message });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
+

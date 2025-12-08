@@ -88,13 +88,14 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/individual', async (req, res) => {
     try {
-        const { name, description, mealId, profileId, consumedAt, portions } = req.body;
+        const { name, description, mealId, profileId, consumedAt, portions, portionFraction } = req.body;
         
         console.log('[POST /meal-consumptions/individual] Received request:', {
             name,
             profileId,
             mealId,
-            hasPortions: !!portions
+            hasPortions: !!portions,
+            portionFraction
         });
         
         if (!profileId || !mealId) {
@@ -103,7 +104,33 @@ router.post('/individual', async (req, res) => {
             });
         }
         
-        const consumptionData = { name, description, mealId, consumedAt, portions };
+        // Handle portionFraction in request body
+        // The library expects portions to be an object with portionFraction and foodPortions
+        // If only portionFraction is provided, we need to fetch the meal first
+        let portionsData = portions;
+        if (portionFraction !== undefined && !portions) {
+            // Fetch meal to get food items
+            const { PrismaClient } = require('@prisma/client');
+            const prisma = new PrismaClient();
+            const meal = await prisma.meal.findUnique({
+                where: { MealID: mealId },
+                include: {
+                    mealFoods: true
+                }
+            });
+            
+            if (meal && meal.mealFoods) {
+                portionsData = {
+                    portionFraction: portionFraction,
+                    foodPortions: meal.mealFoods.map(mf => ({
+                        foodId: mf.foodId,
+                        portionFraction: portionFraction
+                    }))
+                };
+            }
+        }
+        
+        const consumptionData = { name, description, mealId, consumedAt, portions: portionsData };
         const newConsumption = await mealConsumptionsLib.createIndividualMealConsumption(
             consumptionData, 
             profileId

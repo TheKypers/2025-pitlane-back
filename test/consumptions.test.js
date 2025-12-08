@@ -8,10 +8,10 @@ app.use('/', routes);
 
 describe('Consumptions API', () => {
   // Test for the new most consumed meals endpoint
-  describe('GET /consumptions/groups/:groupId/most-consumed', () => {
+  describe('GET /meal-consumptions/groups/:groupId/most-consumed', () => {
     it('should return 404 for non-existent group', async () => {
       const res = await request(app)
-        .get('/consumptions/groups/99999/most-consumed');
+        .get('/meal-consumptions/groups/99999/most-consumed');
       
       expect(res.statusCode).toBe(404);
       expect(res.body.error).toBe('Group not found');
@@ -21,7 +21,7 @@ describe('Consumptions API', () => {
       // This test would require a valid group ID with test data
       // For now, we'll just test the endpoint structure
       const res = await request(app)
-        .get('/consumptions/groups/1/most-consumed?limit=3');
+        .get('/meal-consumptions/groups/1/most-consumed?limit=3');
       
       // Should either return 404 (no group) or 200 with proper structure
       expect([200, 404]).toContain(res.statusCode);
@@ -34,10 +34,10 @@ describe('Consumptions API', () => {
     });
   });
 
-  describe('GET /consumptions/groups/:groupId/filtered-meals', () => {
+  describe('GET /meal-consumptions/groups/:groupId/filtered-meals', () => {
     it('should return 404 for non-existent group', async () => {
       const res = await request(app)
-        .get('/consumptions/groups/99999/filtered-meals');
+        .get('/meal-consumptions/groups/99999/filtered-meals');
       
       expect(res.statusCode).toBe(404);
       expect(res.body.error).toBe('Group not found');

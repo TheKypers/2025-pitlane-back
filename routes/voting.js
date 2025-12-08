@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { prisma } = require('../config/prismaClient');
 const {
     startVotingSession,
     proposeMeal,
@@ -378,5 +379,102 @@ router.get('/sessions/:sessionId', async (req, res) => {
 });
 
 
+
+// Convenience aliases for simpler REST patterns (used by tests)
+router.post('/start', async (req, res) => {
+  try {
+    const { groupId, initiatorId } = req.body;
+    if (!groupId || !initiatorId) {
+      return res.status(400).json({ error: 'Missing required fields: groupId, initiatorId' });
+    }
+    const session = await startVotingSession(initiatorId, groupId);
+    res.status(201).json(session);
+  } catch (error) {
+    console.error('[voting] Error starting voting session:', error);
+    if (error.message.includes('already an active voting session')) {
+      return res.status(400).json({ error: error.message });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/:sessionId/propose', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { mealId, profileId, proposedById } = req.body;
+    const userId = profileId || proposedById;
+
+    if (!mealId || !userId) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: mealId and profileId are required' 
+      });
+    }
+
+    const proposal = await proposeMeal(sessionId, mealId, userId);
+    res.status(201).json(proposal);
+  } catch (error) {
+    console.error('Error proposing meal:', error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.post('/:sessionId/vote', async (req, res) => {
+  const existingRoute = router.stack.find(layer => layer.route?.path === '/sessions/:sessionId/vote');
+  return existingRoute.route.stack[0].handle(req, res);
+});
+
+router.post('/:sessionId/finalize', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await completeVotingSession(sessionId);
+    res.status(200).json(session);
+  } catch (error) {
+    console.error('[voting] Error finalizing voting:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/group/:groupId', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const session = await getGroupActiveVotingSessions(parseInt(groupId));
+    if (!session) {
+      return res.status(404).json({ error: 'No active voting session found' });
+    }
+    res.status(200).json(session);
+  } catch (error) {
+    console.error('[voting] Error getting active session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/:sessionId/cancel', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { initiatorId } = req.body;
+    
+    const session = await prisma.votingSession.findUnique({
+      where: { VotingSessionID: parseInt(sessionId) }
+    });
+    
+    if (!session) {
+      return res.status(404).json({ error: 'Voting session not found' });
+    }
+    
+    if (session.initiatorId !== initiatorId) {
+      return res.status(403).json({ error: 'Only the initiator can cancel the voting session' });
+    }
+    
+    const updated = await prisma.votingSession.update({
+      where: { VotingSessionID: parseInt(sessionId) },
+      data: { status: 'cancelled' }
+    });
+    
+    res.status(200).json(updated);
+  } catch (error) {
+    console.error('[voting] Error cancelling voting:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 module.exports = router;

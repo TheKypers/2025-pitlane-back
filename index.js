@@ -102,19 +102,25 @@ app.get('/test-cors', (req, res) => {
 // Create HTTP server
 const httpServer = http.createServer(app);
 
-// Start voting session scheduler
-const votingLib = require('./controllers/votingLib');
-votingLib.startVotingSessionScheduler();
-console.log('✅ Voting session scheduler started');
+// Only start server if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  // Start voting session scheduler
+  const votingLib = require('./controllers/votingLib');
+  votingLib.startVotingSessionScheduler();
+  console.log('✅ Voting session scheduler started');
 
-httpServer.listen(PORT, () => {
-  console.log('='.repeat(70));
-  console.log('🚀 QueComemos Backend Server Started Successfully');
-  console.log('='.repeat(70));
-  console.log(`📡 Server running on port ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`⏰ Time: ${new Date().toLocaleString()}`);
-  console.log(`⚙️  Voting Scheduler: Active`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-  console.log('='.repeat(70));
-});
+  httpServer.listen(PORT, () => {
+    console.log('='.repeat(70));
+    console.log('🚀 QueComemos Backend Server Started Successfully');
+    console.log('='.repeat(70));
+    console.log(`📡 Server running on port ${PORT}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`⏰ Time: ${new Date().toLocaleString()}`);
+    console.log(`⚙️  Voting Scheduler: Active`);
+    console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+    console.log('='.repeat(70));
+  });
+}
+
+// Export app and server for testing
+module.exports = { app, httpServer };

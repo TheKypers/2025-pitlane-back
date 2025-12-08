@@ -167,11 +167,12 @@ const getCalorieProgress = async (userId, date = new Date()) => {
     const endOfDay = new Date(targetDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // Obtener meal consumptions del día específico
+    // Obtener meal consumptions del día específico (solo individuales)
     const mealConsumptions = await prisma.mealConsumption.findMany({
       where: {
         profileId: userId,
         isActive: true,
+        type: 'individual', // Excluir consumos grupales del progreso personal
         consumedAt: {
           gte: startOfDay,
           lte: endOfDay
