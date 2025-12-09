@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const mealConsumptionsLib = require('../controllers/mealConsumptionsLib');
+const nutritionalAlerts = require('../controllers/nutritionalAlerts');
 
 /**
  * GET /meal-consumptions
@@ -49,7 +50,27 @@ router.get('/user/:profileId', async (req, res) => {
         
         const consumptions = await mealConsumptionsLib.getMealConsumptions(filters);
         
-        res.json(consumptions);
+        // Enrich consumptions with alerts and semaphore data
+        const { PrismaClient } = require('@prisma/client');
+        const prisma = new PrismaClient();
+        const profile = await prisma.profile.findUnique({
+            where: { id: profileId },
+            include: { DietaryRestriction: true }
+        });
+        
+        if (profile) {
+            const enrichedConsumptions = consumptions.map(consumption => 
+                nutritionalAlerts.enrichConsumptionWithAlerts(
+                    consumption,
+                    profile.DietaryRestriction,
+                    profile.calorie_goal || 2000
+                )
+            );
+            
+            res.json(enrichedConsumptions);
+        } else {
+            res.json(consumptions);
+        }
     } catch (error) {
         console.error('Error fetching user meal consumptions:', error);
         res.status(500).json({ 
@@ -136,7 +157,23 @@ router.post('/individual', async (req, res) => {
             profileId
         );
         
-        res.status(201).json(newConsumption);
+        // Enrich with alerts and semaphore
+        const { PrismaClient } = require('@prisma/client');
+        const prisma = new PrismaClient();
+        const profile = await prisma.profile.findUnique({
+            where: { id: profileId },
+            include: { DietaryRestriction: true }
+        });
+        
+        const enrichedConsumption = profile 
+            ? nutritionalAlerts.enrichConsumptionWithAlerts(
+                newConsumption,
+                profile.DietaryRestriction,
+                profile.calorie_goal || 2000
+            )
+            : newConsumption;
+        
+        res.status(201).json(enrichedConsumption);
     } catch (error) {
         console.error('Error creating individual meal consumption:', error);
         
@@ -179,7 +216,23 @@ router.post('/group', async (req, res) => {
             profileId
         );
         
-        res.status(201).json(newConsumption);
+        // Enrich with alerts and semaphore
+        const { PrismaClient } = require('@prisma/client');
+        const prisma = new PrismaClient();
+        const profile = await prisma.profile.findUnique({
+            where: { id: profileId },
+            include: { DietaryRestriction: true }
+        });
+        
+        const enrichedConsumption = profile 
+            ? nutritionalAlerts.enrichConsumptionWithAlerts(
+                newConsumption,
+                profile.DietaryRestriction,
+                profile.calorie_goal || 2000
+            )
+            : newConsumption;
+        
+        res.status(201).json(enrichedConsumption);
     } catch (error) {
         console.error('Error creating group meal consumption:', error);
         
@@ -295,6 +348,54 @@ router.get('/stats', async (req, res) => {
         console.error('Error fetching meal consumption stats:', error);
         res.status(500).json({ 
             error: 'Failed to fetch meal consumption stats',
+            details: error.message 
+        });
+    }
+});
+
+/**
+ * GET /meal-consumptions/semaphore-stats/:profileId
+ * Get semaphore statistics for a user (green, yellow, red counts)
+ */
+router.get('/semaphore-stats/:profileId', async (req, res) => {
+    try {
+        const { profileId } = req.params;
+        
+        // Get all consumptions for the user
+        const consumptions = await mealConsumptionsLib.getMealConsumptions({ 
+            profileId,
+            individualOnly: true 
+        });
+        
+        // Get user profile for calorie goal
+        const { PrismaClient } = require('@prisma/client');
+        const prisma = new PrismaClient();
+        const profile = await prisma.profile.findUnique({
+            where: { id: profileId },
+            include: { DietaryRestriction: true }
+        });
+        
+        if (!profile) {
+            return res.status(404).json({ error: 'Profile not found' });
+        }
+        
+        // Enrich consumptions with semaphore data
+        const enrichedConsumptions = consumptions.map(consumption => 
+            nutritionalAlerts.enrichConsumptionWithAlerts(
+                consumption,
+                profile.DietaryRestriction,
+                profile.calorie_goal || 2000
+            )
+        );
+        
+        // Calculate stats
+        const stats = nutritionalAlerts.calculateConsumptionStats(enrichedConsumptions);
+        
+        res.json(stats);
+    } catch (error) {
+        console.error('Error fetching semaphore stats:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch semaphore statistics',
             details: error.message 
         });
     }

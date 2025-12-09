@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const foodsController = require('../controllers/foodsLib');
+const nutritionalAlerts = require('../controllers/nutritionalAlerts');
 
 // GET /foods/for-user?restrictions=1,2,3 - get foods filtered by user dietary restrictions
 router.get('/for-user', async (req, res) => {
@@ -123,7 +124,36 @@ router.post('/', async (req, res) => {
         }
 
         const food = await foodsController.createFood({ name, svgLink, kCal, preferences, dietaryRestrictions, hasNoRestrictions, profileId });
-        res.status(201).json(food);
+        
+        // Check dietary conflicts with user's profile
+        const { PrismaClient } = require('@prisma/client');
+        const prisma = new PrismaClient();
+        const profile = await prisma.profile.findUnique({
+            where: { id: profileId },
+            include: { DietaryRestriction: true }
+        });
+        
+        const conflictCheck = nutritionalAlerts.checkDietaryConflicts(
+            food.dietaryRestrictions || [],
+            profile?.DietaryRestriction || []
+        );
+        
+        // Add alert info to response
+        const response = {
+            ...food,
+            dietaryAlert: conflictCheck.hasConflict ? {
+                hasConflict: true,
+                message: `This food contains ingredients that conflict with your dietary restrictions`,
+                conflicts: conflictCheck.conflictingRestrictions
+            } : {
+                hasConflict: false,
+                isFit: true,
+                message: 'This food fits your dietary profile'
+            }
+        };
+        
+        await prisma.$disconnect();
+        res.status(201).json(response);
     } catch (err) {
         if (err.code === 'P2002') {
             res.status(409).json({ error: 'Food with this unique value already exists' });

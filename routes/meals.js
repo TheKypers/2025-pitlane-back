@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mealsLib = require('../controllers/mealsLib');
 const BadgesLibrary = require('../controllers/badgesLib');
+const nutritionalAlerts = require('../controllers/nutritionalAlerts');
 
 // GET /meals/all - Get all meals from all users with profile information
 router.get('/all', async (req, res) => {
@@ -61,10 +62,51 @@ router.get('/recommended/:profileId', async (req, res) => {
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        const { profileId } = req.query; // Optional: check fitness for specific user
+        
         const meal = await mealsLib.getMealById(parseInt(id));
         if (!meal) {
             return res.status(404).json({ error: 'Meal not found' });
         }
+        
+        // If profileId provided, enrich with dietary fitness info
+        if (profileId) {
+            const { PrismaClient } = require('@prisma/client');
+            const prisma = new PrismaClient();
+            const profile = await prisma.profile.findUnique({
+                where: { id: profileId },
+                include: { 
+                    DietaryRestriction: true,
+                    Preference: true
+                }
+            });
+            
+            if (profile) {
+                const fitnessCheck = nutritionalAlerts.checkMealFitness(
+                    meal,
+                    profile.DietaryRestriction
+                );
+                meal.dietaryFitness = fitnessCheck;
+                
+                // Calculate total calories
+                let totalKcal = 0;
+                if (meal.mealFoods) {
+                    totalKcal = meal.mealFoods.reduce((sum, mf) => {
+                        return sum + (mf.food.kCal * mf.quantity);
+                    }, 0);
+                }
+                
+                // Add calorie semaphore
+                meal.calorieStatus = nutritionalAlerts.calculateCalorieSemaphore(
+                    totalKcal,
+                    profile.calorie_goal || 2000
+                );
+                meal.totalKcal = totalKcal;
+            }
+            
+            await prisma.$disconnect();
+        }
+        
         res.json(meal);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -107,9 +149,37 @@ router.post('/', async (req, res) => {
         const meal = await mealsLib.createMeal(name, description, profileId, mealData);
         console.log('Meal created successfully:', meal.MealID);
         
-        // Create response object with meal data
+        // Get user's dietary restrictions to check for conflicts
+        const { PrismaClient } = require('@prisma/client');
+        const prisma = new PrismaClient();
+        const profile = await prisma.profile.findUnique({
+            where: { id: profileId },
+            include: { DietaryRestriction: true }
+        });
+        
+        // Check dietary fitness
+        const fitnessCheck = nutritionalAlerts.checkMealFitness(
+            meal,
+            profile?.DietaryRestriction || []
+        );
+        
+        // Calculate total calories
+        let totalKcal = 0;
+        if (meal.mealFoods) {
+            totalKcal = meal.mealFoods.reduce((sum, mf) => {
+                return sum + (mf.food.kCal * mf.quantity);
+            }, 0);
+        }
+        
+        // Create response object with meal data and alerts
         const response = {
             ...meal,
+            totalKcal,
+            dietaryFitness: fitnessCheck,
+            calorieStatus: nutritionalAlerts.calculateCalorieSemaphore(
+                totalKcal,
+                profile?.calorie_goal || 2000
+            ),
             badgeNotifications: []
         };
         
@@ -126,6 +196,8 @@ router.post('/', async (req, res) => {
         } catch (badgeError) {
             console.error('Error awarding meal creation badge:', badgeError);
             // Don't fail the meal creation if badge awarding fails
+        } finally {
+            await prisma.$disconnect();
         }
         
         console.log('[Meals] Final response:', { mealId: response.MealID, hasBadgeNotifications: response.badgeNotifications?.length > 0 });
