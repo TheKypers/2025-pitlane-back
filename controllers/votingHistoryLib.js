@@ -306,7 +306,8 @@ async function selectMealPortion(sessionId, userId, portionData) {
             }
           }
         }
-      }
+      },
+      group: true
     }
   });
 
@@ -339,8 +340,8 @@ async function selectMealPortion(sessionId, userId, portionData) {
     mealConsumption = await prisma.mealConsumption.update({
       where: { MealConsumptionID: existingConsumption.MealConsumptionID },
       data: {
-        name: `${session.winnerMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
-        description: `From voting session - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
+        name: `Consumption of ${session.winnerMeal.name}`,
+        description: `From voting session in group ${session.group.name}`,
         type: 'individual', // Individual portion selection
         portionFraction: parseFloat(mealPortionFraction),
         totalKcal: Math.round(totalCalories),
@@ -351,10 +352,10 @@ async function selectMealPortion(sessionId, userId, portionData) {
     // Create new individual meal consumption (no groupId - this is personal consumption)
     mealConsumption = await prisma.mealConsumption.create({
       data: {
-        name: `${session.winnerMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
+        name: `Consumption of ${session.winnerMeal.name}`,
         groupId: null, // Individual consumption from voting portion selection
         type: 'individual', // Individual portion selection
-        description: `From voting session - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
+        description: `From voting session in group ${session.group.name}`,
         profileId: userId,
         mealId: session.winnerMealId,
         source: 'voting',
@@ -446,7 +447,8 @@ async function defaultExpiredParticipants(sessionId) {
             include: {
               mealFoods: true
             }
-          }
+          },
+          group: true
         }
       }
     }
@@ -464,8 +466,8 @@ async function defaultExpiredParticipants(sessionId) {
     // Create whole meal consumption with food portions
     const mealConsumption = await prisma.mealConsumption.create({
       data: {
-        name: `${winnerMeal.name} (100% - auto-defaulted)`,
-        description: `From voting session - automatically defaulted to whole meal`,
+        name: `Consumption of ${winnerMeal.name}`,
+        description: `From voting session in group ${participant.votingSession.group.name} (auto-defaulted to whole meal)`,
         profileId: participant.userId,
         mealId: participant.votingSession.winnerMealId,
         source: 'voting',
@@ -604,8 +606,8 @@ async function createMealConsumptionFromVotingSession(sessionId, profileId) {
   // Create meal consumption with food portions
   const mealConsumption = await prisma.mealConsumption.create({
     data: {
-      name: session.winnerMeal.name,
-      description: `Group meal from voting session: ${session.title || 'Voting'}`,
+      name: `Consumption of ${session.winnerMeal.name}`,
+      description: `From voting session in group ${session.group.name}`,
       profileId,
       mealId: session.winnerMealId,
       groupId: session.groupId,

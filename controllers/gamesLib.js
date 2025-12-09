@@ -16,8 +16,8 @@ async function recordGroupConsumptionForGame(session) {
       return sum + (mf.food.kCal * mf.quantity);
     }, 0);
 
-    const name = `${session.winningMeal.name} (Game: ${session.gameType})`;
-    const description = `Chosen from ${session.gameType} game session #${session.GameSessionID}`;
+    const name = `Consumption of ${session.winningMeal.name}`;
+    const description = `From ${session.gameType === 'egg_clicker' ? 'clicker' : 'roulette'} game in group ${session.group.name}`;
 
     // Create a single group-level consumption record
     // This shows in group activity but NOT in individual histories
@@ -25,7 +25,7 @@ async function recordGroupConsumptionForGame(session) {
     await prisma.mealConsumption.create({
       data: {
         name,
-        description: `Group game consumption: ${description}`,
+        description,
         profileId: session.hostId, // Use game host as the representative
         mealId: session.winningMealId,
         groupId: groupId,

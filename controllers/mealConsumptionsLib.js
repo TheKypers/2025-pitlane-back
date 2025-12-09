@@ -277,8 +277,8 @@ async function createIndividualMealConsumption(consumptionData, profileId) {
 
     const mealConsumption = await prisma.mealConsumption.create({
         data: {
-            name: name || mealData.name,
-            description: description || `Individual consumption of ${mealData.name}`,
+            name: name || `Consumption of ${mealData.name}`,
+            description: description || 'From manual meal registration',
             profileId,
             mealId,
             type: 'individual',
@@ -439,8 +439,8 @@ async function createGroupMealConsumption(consumptionData, profileId) {
     // Users will later create individual consumptions when they select their portions
     const groupConsumption = await prisma.mealConsumption.create({
         data: {
-            name: name || mealData.name,
-            description: description || `Group meal: ${mealData.name}`,
+            name: name || `Consumption of ${mealData.name}`,
+            description: description || `From manual registration in group ${groupInfo.name}`,
             profileId, // The user who registered the meal
             mealId,
             groupId: parseInt(groupId),
@@ -508,7 +508,7 @@ async function createGroupMealConsumption(consumptionData, profileId) {
 }
 
 /**
- * Select individual portion from a group meal (similar to voting portion selection)
+ * Select individual portion from a group meal
  * Creates an individual consumption record for the user
  */
 async function selectGroupMealPortion(groupConsumptionId, userId, portionData) {
@@ -604,8 +604,8 @@ async function selectGroupMealPortion(groupConsumptionId, userId, portionData) {
             const updated = await tx.mealConsumption.update({
                 where: { MealConsumptionID: existingConsumption.MealConsumptionID },
                 data: {
-                    name: `${groupConsumption.meal.name} (${Math.round(portionFraction * 100)}%)`,
-                    description: `From group meal - ${Math.round(portionFraction * 100)}% portion`,
+                    name: `Consumption of ${groupConsumption.meal.name}`,
+                    description: `From manual registration in group ${groupConsumption.group.name}`,
                     portionFraction: parseFloat(portionFraction),
                     totalKcal: Math.round(totalCalories)
                 }
@@ -670,10 +670,10 @@ async function selectGroupMealPortion(groupConsumptionId, userId, portionData) {
 
         individualConsumption = await prisma.mealConsumption.create({
             data: {
-                name: `${groupConsumption.meal.name} (${Math.round(portionFraction * 100)}%)`,
+                name: `Consumption of ${groupConsumption.meal.name}`,
                 groupId: groupConsumption.groupId, // Keep group reference
                 type: 'individual', // Individual consumption
-                description: `From group meal - ${Math.round(portionFraction * 100)}% portion`,
+                description: `From manual registration in group ${groupConsumption.group.name}`,
                 profileId: userId,
                 mealId: groupConsumption.mealId,
                 source: 'group', // Source is group meal
