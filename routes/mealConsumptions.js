@@ -10,12 +10,13 @@ const nutritionalAlerts = require('../controllers/nutritionalAlerts');
  */
 router.get('/', async (req, res) => {
     try {
-        const { profileId, groupId, source, startDate, endDate } = req.query;
+        const { profileId, groupId, source, type, startDate, endDate } = req.query;
         
         const filters = {};
         if (profileId) filters.profileId = profileId;
         if (groupId) filters.groupId = groupId;
         if (source) filters.source = source;
+        if (type) filters.type = type;
         if (startDate) filters.startDate = startDate;
         if (endDate) filters.endDate = endDate;
         
@@ -190,7 +191,7 @@ router.post('/individual', async (req, res) => {
 
 /**
  * POST /meal-consumptions/group
- * Create a group meal consumption record
+ * Create a group meal consumption record (reference only)
  */
 router.post('/group', async (req, res) => {
     try {
@@ -250,13 +251,78 @@ router.post('/group', async (req, res) => {
 });
 
 /**
+ * POST /meal-consumptions/group/:groupConsumptionId/portions
+ * Select individual portion from a group meal (creates individual consumption)
+ */
+router.post('/group/:groupConsumptionId/portions', async (req, res) => {
+    try {
+        const { groupConsumptionId } = req.params;
+        const { profileId, portionFraction, foodPortions } = req.body;
+        
+        console.log('[POST /meal-consumptions/group/:id/portions] Received request:', {
+            groupConsumptionId,
+            profileId,
+            portionFraction,
+            foodPortionsCount: foodPortions?.length
+        });
+        
+        if (!profileId) {
+            return res.status(400).json({ error: 'ProfileId is required' });
+        }
+        
+        if (!portionFraction || !foodPortions || !Array.isArray(foodPortions)) {
+            return res.status(400).json({ 
+                error: 'portionFraction and foodPortions array are required' 
+            });
+        }
+        
+        const portionData = { portionFraction, foodPortions };
+        const individualConsumption = await mealConsumptionsLib.selectGroupMealPortion(
+            groupConsumptionId,
+            profileId,
+            portionData
+        );
+        
+        // Enrich with alerts and semaphore
+        const { PrismaClient } = require('@prisma/client');
+        const prisma = new PrismaClient();
+        const profile = await prisma.profile.findUnique({
+            where: { id: profileId },
+            include: { DietaryRestriction: true }
+        });
+        
+        const enrichedConsumption = profile 
+            ? nutritionalAlerts.enrichConsumptionWithAlerts(
+                individualConsumption,
+                profile.DietaryRestriction,
+                profile.calorie_goal || 2000
+            )
+            : individualConsumption;
+        
+        res.status(201).json(enrichedConsumption);
+    } catch (error) {
+        console.error('Error selecting group meal portion:', error);
+        
+        if (error.message.includes('not found') || 
+            error.message.includes('member')) {
+            return res.status(400).json({ error: error.message });
+        }
+        
+        res.status(500).json({ 
+            error: 'Failed to select meal portion',
+            details: error.message 
+        });
+    }
+});
+
+/**
  * PUT /meal-consumptions/:id
  * Update a meal consumption record
  */
 router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description, profileId, consumedAt } = req.body;
+        const { name, description, profileId, consumedAt, portionFraction, foodPortions, totalKcal } = req.body;
         
         if (!profileId) {
             return res.status(400).json({ 
@@ -264,7 +330,15 @@ router.put('/:id', async (req, res) => {
             });
         }
         
-        const consumptionData = { name, description, consumedAt };
+        const consumptionData = { 
+            name, 
+            description, 
+            consumedAt,
+            portionFraction,
+            foodPortions,
+            totalKcal
+        };
+        
         const updatedConsumption = await mealConsumptionsLib.updateMealConsumption(
             id, 
             consumptionData, 

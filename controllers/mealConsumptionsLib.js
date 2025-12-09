@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
  * Get all meal consumptions with filters
  */
 async function getMealConsumptions(filters = {}) {
-    const { profileId, groupId, source, startDate, endDate, individualOnly } = filters;
+    const { profileId, groupId, source, type, startDate, endDate, individualOnly } = filters;
     
     let whereClause = {
         isActive: true
@@ -29,6 +29,11 @@ async function getMealConsumptions(filters = {}) {
     // If individualOnly flag is explicitly set, only get individual consumptions (not group-level)
     if (individualOnly === true) {
         whereClause.type = 'individual';
+    }
+
+    // If type is explicitly provided, filter by it
+    if (type) {
+        whereClause.type = type;
     }
 
     if (source) {
@@ -430,73 +435,286 @@ async function createGroupMealConsumption(consumptionData, profileId) {
         }));
     }
 
-    // Use a transaction to create group consumption and individual consumptions for each member
-    const result = await prisma.$transaction(async (tx) => {
-        // Create individual consumption records for each group member
-        const individualConsumptions = await Promise.all(
-            groupInfo.members.map(async (member) => {
-                return tx.mealConsumption.create({
-                    data: {
-                        name: `${name || mealData.name} (Group: ${groupInfo.name})`,
-                        description: `Group meal consumption: ${description || mealData.name}`,
-                        profileId: member.profile.id,
-                        mealId,
-                        groupId: parseInt(groupId),
-                        type: 'group', // Mark as group-level consumption
-                        source: 'group',
-                        portionFraction,
-                        quantity: 1,
-                        totalKcal: Math.round(totalKcal),
-                        consumedAt: consumedAt ? new Date(consumedAt) : new Date(),
-                        foodPortions: {
-                            create: foodPortionsData
-                        }
-                    },
-                    include: {
-                        profile: {
-                            select: {
-                                id: true,
-                                username: true,
-                                role: true
-                            }
-                        },
-                        meal: {
-                            include: {
-                                mealFoods: {
-                                    include: {
-                                        food: true
-                                    }
+    // Create a single reference group consumption (not tied to individual users)
+    // Users will later create individual consumptions when they select their portions
+    const groupConsumption = await prisma.mealConsumption.create({
+        data: {
+            name: name || mealData.name,
+            description: description || `Group meal: ${mealData.name}`,
+            profileId, // The user who registered the meal
+            mealId,
+            groupId: parseInt(groupId),
+            type: 'group', // Reference consumption for the group
+            source: 'group',
+            portionFraction,
+            quantity: 1,
+            totalKcal: Math.round(totalKcal),
+            consumedAt: consumedAt ? new Date(consumedAt) : new Date(),
+            foodPortions: {
+                create: foodPortionsData
+            }
+        },
+        include: {
+            profile: {
+                select: {
+                    id: true,
+                    username: true,
+                    role: true
+                }
+            },
+            meal: {
+                include: {
+                    mealFoods: {
+                        include: {
+                            food: {
+                                include: {
+                                    dietaryRestrictions: true,
+                                    preferences: true
                                 }
-                            }
-                        },
-                        foodPortions: {
-                            include: {
-                                food: true
                             }
                         }
                     }
-                });
-            })
-        );
-
-        // Return the consumption for the requesting user
-        const userConsumption = individualConsumptions.find(c => c.profileId === profileId);
-        
-        return {
-            userConsumption,
-            individualConsumptions,
-            memberCount: groupInfo.members.length
-        };
+                }
+            },
+            foodPortions: {
+                include: {
+                    food: {
+                        include: {
+                            dietaryRestrictions: true,
+                            preferences: true
+                        }
+                    }
+                }
+            },
+            group: {
+                include: {
+                    members: {
+                        where: { isActive: true },
+                        include: {
+                            profile: {
+                                select: {
+                                    id: true,
+                                    username: true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     });
 
-    return result.userConsumption;
+    return groupConsumption;
+}
+
+/**
+ * Select individual portion from a group meal (similar to voting portion selection)
+ * Creates an individual consumption record for the user
+ */
+async function selectGroupMealPortion(groupConsumptionId, userId, portionData) {
+    const { portionFraction, foodPortions } = portionData;
+
+    // Get the group consumption reference
+    const groupConsumption = await prisma.mealConsumption.findUnique({
+        where: {
+            MealConsumptionID: parseInt(groupConsumptionId),
+            isActive: true,
+            type: 'group',
+            source: 'group'
+        },
+        include: {
+            meal: {
+                include: {
+                    mealFoods: {
+                        include: {
+                            food: true
+                        }
+                    }
+                }
+            },
+            group: {
+                include: {
+                    members: {
+                        where: { isActive: true },
+                        include: {
+                            profile: {
+                                select: {
+                                    id: true,
+                                    username: true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    if (!groupConsumption) {
+        throw new Error('Group meal consumption not found');
+    }
+
+    // Verify user is a member of the group
+    const isMember = groupConsumption.group.members.some(
+        member => member.profile.id === userId
+    );
+
+    if (!isMember) {
+        throw new Error('You must be a member of this group');
+    }
+
+    // Calculate total calories from selected portions
+    const totalCalories = foodPortions.reduce((sum, fp) => {
+        const mealFood = groupConsumption.meal.mealFoods.find(mf => mf.foodId === fp.foodId);
+        if (!mealFood) return sum;
+        
+        const quantityConsumed = fp.absoluteQuantity !== undefined
+            ? fp.absoluteQuantity
+            : mealFood.quantity * fp.portionFraction;
+        
+        return sum + (mealFood.food.kCal * quantityConsumed);
+    }, 0);
+
+    // Check if user already has an individual consumption for this group meal
+    const existingConsumption = await prisma.mealConsumption.findFirst({
+        where: {
+            profileId: userId,
+            mealId: groupConsumption.mealId,
+            groupId: groupConsumption.groupId,
+            source: 'group',
+            type: 'individual',
+            consumedAt: {
+                gte: new Date(groupConsumption.consumedAt.getTime() - 60000), // Within 1 minute
+                lte: new Date(groupConsumption.consumedAt.getTime() + 60000)
+            }
+        }
+    });
+
+    let individualConsumption;
+
+    if (existingConsumption) {
+        // Update existing individual consumption
+        individualConsumption = await prisma.$transaction(async (tx) => {
+            // Delete old food portions
+            await tx.foodPortion.deleteMany({
+                where: { mealConsumptionId: existingConsumption.MealConsumptionID }
+            });
+
+            // Update consumption
+            const updated = await tx.mealConsumption.update({
+                where: { MealConsumptionID: existingConsumption.MealConsumptionID },
+                data: {
+                    name: `${groupConsumption.meal.name} (${Math.round(portionFraction * 100)}%)`,
+                    description: `From group meal - ${Math.round(portionFraction * 100)}% portion`,
+                    portionFraction: parseFloat(portionFraction),
+                    totalKcal: Math.round(totalCalories)
+                }
+            });
+
+            // Create new food portions
+            const foodPortionPromises = foodPortions.map(fp => {
+                const mealFood = groupConsumption.meal.mealFoods.find(mf => mf.foodId === fp.foodId);
+                const quantityConsumed = fp.absoluteQuantity !== undefined
+                    ? fp.absoluteQuantity
+                    : mealFood.quantity * fp.portionFraction;
+
+                return tx.foodPortion.create({
+                    data: {
+                        mealConsumptionId: updated.MealConsumptionID,
+                        foodId: fp.foodId,
+                        portionFraction: parseFloat(fp.portionFraction),
+                        quantityConsumed: quantityConsumed
+                    }
+                });
+            });
+
+            await Promise.all(foodPortionPromises);
+
+            return tx.mealConsumption.findUnique({
+                where: { MealConsumptionID: updated.MealConsumptionID },
+                include: {
+                    foodPortions: {
+                        include: { food: true }
+                    },
+                    meal: {
+                        include: {
+                            mealFoods: {
+                                include: { food: true }
+                            }
+                        }
+                    },
+                    profile: {
+                        select: {
+                            id: true,
+                            username: true,
+                            role: true
+                        }
+                    }
+                }
+            });
+        });
+    } else {
+        // Create new individual consumption
+        const foodPortionsData = foodPortions.map(fp => {
+            const mealFood = groupConsumption.meal.mealFoods.find(mf => mf.foodId === fp.foodId);
+            const quantityConsumed = fp.absoluteQuantity !== undefined
+                ? fp.absoluteQuantity
+                : mealFood.quantity * fp.portionFraction;
+
+            return {
+                foodId: fp.foodId,
+                portionFraction: parseFloat(fp.portionFraction),
+                quantityConsumed: quantityConsumed
+            };
+        });
+
+        individualConsumption = await prisma.mealConsumption.create({
+            data: {
+                name: `${groupConsumption.meal.name} (${Math.round(portionFraction * 100)}%)`,
+                groupId: groupConsumption.groupId, // Keep group reference
+                type: 'individual', // Individual consumption
+                description: `From group meal - ${Math.round(portionFraction * 100)}% portion`,
+                profileId: userId,
+                mealId: groupConsumption.mealId,
+                source: 'group', // Source is group meal
+                portionFraction: parseFloat(portionFraction),
+                quantity: 1,
+                totalKcal: Math.round(totalCalories),
+                consumedAt: groupConsumption.consumedAt, // Same time as group meal
+                foodPortions: {
+                    create: foodPortionsData
+                }
+            },
+            include: {
+                foodPortions: {
+                    include: { food: true }
+                },
+                meal: {
+                    include: {
+                        mealFoods: {
+                            include: { food: true }
+                        }
+                    }
+                },
+                profile: {
+                    select: {
+                        id: true,
+                        username: true,
+                        role: true
+                    }
+                }
+            }
+        });
+    }
+
+    return individualConsumption;
 }
 
 /**
  * Update meal consumption record
  */
 async function updateMealConsumption(consumptionId, consumptionData, profileId) {
-    const { name, description, consumedAt } = consumptionData;
+    const { name, description, consumedAt, portionFraction, foodPortions, totalKcal } = consumptionData;
     
     // Check if consumption exists and belongs to the user
     const existingConsumption = await prisma.mealConsumption.findUnique({
@@ -513,6 +731,85 @@ async function updateMealConsumption(consumptionId, consumptionData, profileId) 
         throw new Error('Unauthorized to update this consumption');
     }
 
+    // If updating portions, handle in a transaction
+    if (portionFraction !== undefined || foodPortions) {
+        return prisma.$transaction(async (tx) => {
+            // Delete existing food portions if any
+            await tx.foodPortion.deleteMany({
+                where: {
+                    mealConsumptionId: parseInt(consumptionId)
+                }
+            });
+
+            // Update the meal consumption with new portion data
+            const updateData = {
+                ...(name && { name }),
+                ...(description !== undefined && { description }),
+                ...(consumedAt && { consumedAt: new Date(consumedAt) }),
+                ...(portionFraction !== undefined && { portionFraction }),
+                ...(totalKcal !== undefined && { totalKcal })
+            };
+
+            // Add food portions if provided
+            if (foodPortions && foodPortions.length > 0) {
+                updateData.foodPortions = {
+                    createMany: {
+                        data: foodPortions.map(fp => ({
+                            foodId: fp.foodId,
+                            portionFraction: fp.portionFraction,
+                            quantityConsumed: fp.absoluteQuantity !== undefined 
+                                ? fp.absoluteQuantity 
+                                : fp.quantityConsumed || 0
+                        }))
+                    }
+                };
+            }
+
+            return tx.mealConsumption.update({
+                where: {
+                    MealConsumptionID: parseInt(consumptionId)
+                },
+                data: updateData,
+                include: {
+                    meal: {
+                        include: {
+                            mealFoods: {
+                                include: {
+                                    food: {
+                                        include: {
+                                            dietaryRestrictions: true,
+                                            preferences: true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    foodPortions: {
+                        include: {
+                            food: true
+                        }
+                    },
+                    profile: {
+                        select: {
+                            id: true,
+                            username: true,
+                            role: true
+                        }
+                    },
+                    group: {
+                        select: {
+                            GroupID: true,
+                            name: true,
+                            description: true
+                        }
+                    }
+                }
+            });
+        });
+    }
+
+    // Simple update without portions
     return prisma.mealConsumption.update({
         where: {
             MealConsumptionID: parseInt(consumptionId)
@@ -838,6 +1135,7 @@ module.exports = {
     getMealConsumptionById,
     createIndividualMealConsumption,
     createGroupMealConsumption,
+    selectGroupMealPortion,
     updateMealConsumption,
     deleteMealConsumption,
     getMealConsumptionStats,
