@@ -459,16 +459,28 @@ async function submitClickCount(gameSessionId, profileId, clickCount) {
 
     // Check if all participants have submitted
     const allParticipants = await prisma.gameParticipant.findMany({
-      where: { gameSessionId: parseInt(gameSessionId) }
+      where: { gameSessionId: parseInt(gameSessionId) },
+      include: {
+        profile: {
+          select: {
+            id: true,
+            username: true
+          }
+        }
+      }
     });
 
     const allSubmitted = allParticipants.every(p => p.hasSubmitted);
+    console.log(`[gamesLib] Submission check - ${allParticipants.filter(p => p.hasSubmitted).length}/${allParticipants.length} submitted`);
 
     if (allSubmitted) {
+      console.log('[gamesLib] All participants submitted! Completing game...');
       // Determine winner
       const winner = allParticipants.reduce((max, p) => 
         p.clickCount > max.clickCount ? p : max
       );
+
+      console.log(`[gamesLib] Winner: ${winner.profile.username} with ${winner.clickCount} clicks`);
 
       const completed = await prisma.gameSession.update({
         where: { GameSessionID: parseInt(gameSessionId) },
@@ -490,10 +502,28 @@ async function submitClickCount(gameSessionId, profileId, clickCount) {
             include: {
               mealFoods: { include: { food: true } }
             }
+          },
+          host: {
+            select: {
+              id: true,
+              username: true
+            }
+          },
+          participants: {
+            include: {
+              profile: {
+                select: {
+                  id: true,
+                  username: true
+                }
+              },
+              meal: true
+            }
           }
         }
       });
 
+      console.log('[gamesLib] Game completed, recording consumption...');
       await recordGroupConsumptionForGame(completed);
       
       // Award badge to the winner and get notifications
@@ -504,6 +534,12 @@ async function submitClickCount(gameSessionId, profileId, clickCount) {
         updated.badgeNotifications = badgeResult.badgeNotifications;
         console.log(`[gamesLib] Winner ${winner.profileId} earned ${badgeResult.badgeNotifications.length} badge(s)!`);
       }
+
+      // Return the completed game session with all details
+      return {
+        ...updated,
+        gameSession: completed
+      };
     }
 
     return updated;
