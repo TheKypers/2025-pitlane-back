@@ -586,23 +586,13 @@ async function completeVotingSession(votingSessionId) {
         // Don't fail the voting completion if badge awarding fails
     }
 
-    // Update participant deadlines (15 minutes from now)
-    try {
-        await votingHistoryLib.updateParticipantDeadlines(votingSessionId);
-        console.log(`Updated participant deadlines for session ${votingSessionId}`);
-    } catch (error) {
-        console.error(`Error updating participant deadlines:`, error);
-    }
+    // Update participant deadlines (non-blocking, don't wait)
+    votingHistoryLib.updateParticipantDeadlines(votingSessionId)
+        .then(() => console.log(`Updated participant deadlines for session ${votingSessionId}`))
+        .catch(error => console.error(`Error updating participant deadlines:`, error));
 
-    // Automatically cleanup temporary data
-    setTimeout(async () => {
-        try {
-            await cleanupVotingSession(votingSessionId);
-            console.log(`Cleaned up voting session ${votingSessionId}`);
-        } catch (error) {
-            console.error(`Error cleaning up voting session ${votingSessionId}:`, error);
-        }
-    }, 5000); // Clean up after 5 seconds
+    // Note: Cleanup is handled by a separate scheduled job or manual trigger
+    // Don't use setTimeout in serverless environments
 
     return {
         session: completedSession,
