@@ -102,8 +102,8 @@ app.get('/test-cors', (req, res) => {
 // Create HTTP server
 const httpServer = http.createServer(app);
 
-// Only start server if not in test environment
-if (process.env.NODE_ENV !== 'test') {
+// Only start server if not in test environment and not in serverless (Vercel)
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   // Start voting session scheduler
   const votingLib = require('./controllers/votingLib');
   votingLib.startVotingSessionScheduler();
@@ -122,5 +122,20 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
+// For Vercel serverless deployment
+if (process.env.VERCEL) {
+  // Start voting session scheduler for serverless
+  const votingLib = require('./controllers/votingLib');
+  votingLib.startVotingSessionScheduler();
+  console.log('✅ Voting session scheduler started');
+}
+
+// Export app for Vercel serverless functions
+module.exports = app;
+
+// Also export as default for ES6 compatibility
+module.exports.default = app;
+
 // Export app and server for testing
-module.exports = { app, httpServer };
+module.exports.app = app;
+module.exports.httpServer = httpServer;
