@@ -385,11 +385,11 @@ async function registerGameMealPortion(sessionId, profileId, mealId, portionData
     });
     console.log('[Game History] Updated meal consumption:', mealConsumption.MealConsumptionID);
   } else {
-    // Create new individual meal consumption (no groupId - this is personal consumption)
+    // Create new individual meal consumption
     mealConsumption = await prisma.mealConsumption.create({
       data: {
         name: `${session.winningMeal.name} (${Math.round(parseFloat(mealPortionFraction) * 100)}%)`,
-        description: `From ${formatGameType(session.gameType)} game - ${Math.round(parseFloat(mealPortionFraction) * 100)}% portion`,
+        description: `From ${formatGameType(session.gameType)} game`,
         profileId: profileId,
         mealId: parseInt(mealId),
         groupId: null, // Individual consumption from game portion selection

@@ -809,9 +809,6 @@ module.exports = {
    * Complete a roulette game by selecting a random participant's meal
    * Only host can trigger the spin. Works when status is 'ready' or 'playing'/'submitting'.
    */
-  /**
-   * Determine roulette winner without completing the game (for animation)
-   */
   determineRouletteWinner: async function (gameSessionId, hostId) {
     try {
       const gameSession = await prisma.gameSession.findUnique({
