@@ -2,43 +2,24 @@
 const express = require('express');
 const router = express.Router();
 const foodsController = require('../controllers/foodsLib');
+const nutritionalAlerts = require('../controllers/nutritionalAlerts');
 
-// GET /foods/by-preference/:preferenceId
-router.get('/by-preference/:preferenceId', async (req, res) => {
+// GET /foods/for-user?restrictions=1,2,3 - get foods filtered by user dietary restrictions
+router.get('/for-user', async (req, res) => {
     try {
-        const foods = await foodsController.getFoodsByPreference(req.params.preferenceId);
+        const { restrictions } = req.query;
+        const userRestrictions = restrictions ? restrictions.split(',').map(id => parseInt(id)).filter(id => !isNaN(id)) : [];
+        const foods = await foodsController.getFoodsForUser(userRestrictions);
         res.json(foods);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// GET /foods/by-restriction/:restrictionId
-router.get('/by-restriction/:restrictionId', async (req, res) => {
+// GET /foods/user/:profileId - get foods created by a specific user
+router.get('/user/:profileId', async (req, res) => {
     try {
-        const foods = await foodsController.getFoodsByRestriction(req.params.restrictionId);
-        res.json(foods);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// POST /foods/by-preference-and-restriction
-router.post('/by-preference-and-restriction', async (req, res) => {
-    try {
-        const { preferenceId, restrictionId } = req.body;
-        const foods = await foodsController.getFoodsByPreferenceAndRestriction(preferenceId, restrictionId);
-        res.json(foods);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// GET /foods/recommended/:profileId
-router.get('/recommended/:profileId', async (req, res) => {
-    try {
-        const foods = await foodsController.getRecommendedFoodsForProfile(req.params.profileId);
-        if (foods === null) return res.status(404).json({ error: 'Profile not found' });
+        const foods = await foodsController.getFoodsByProfileId(req.params.profileId);
         res.json(foods);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -72,8 +53,8 @@ router.get('/:id', async (req, res) => {
 // PUT /foods/:id - update a food by id
 router.put('/:id', async (req, res) => {
     try {
-        const { name, svgLink, preferences, dietaryRestrictions } = req.body;
-        const updatedFood = await foodsController.updateFood(req.params.id, { name, svgLink, preferences, dietaryRestrictions });
+        const { name, svgLink, kCal, preferences, dietaryRestrictions } = req.body;
+        const updatedFood = await foodsController.updateFood(req.params.id, { name, svgLink, kCal, preferences, dietaryRestrictions });
         if (!updatedFood) return res.status(404).json({ error: 'Food not found' });
         res.json(updatedFood);
     } catch (err) {
@@ -94,9 +75,43 @@ router.get('/', async (req, res) => {
 // POST /foods - create a new food
 router.post('/', async (req, res) => {
     try {
-        const { name, svgLink, preferences, dietaryRestrictions } = req.body;
-        const food = await foodsController.createFood({ name, svgLink, preferences, dietaryRestrictions });
-        res.status(201).json(food);
+        const { name, svgLink, kCal, preferences, dietaryRestrictions, hasNoRestrictions, profileId } = req.body;
+        
+        if (!profileId) {
+            return res.status(400).json({ error: 'profileId is required' });
+        }
+
+        const food = await foodsController.createFood({ name, svgLink, kCal, preferences, dietaryRestrictions, hasNoRestrictions, profileId });
+        
+        // Check dietary conflicts with user's profile
+        const { PrismaClient } = require('@prisma/client');
+        const prisma = new PrismaClient();
+        const profile = await prisma.profile.findUnique({
+            where: { id: profileId },
+            include: { DietaryRestriction: true }
+        });
+        
+        const conflictCheck = nutritionalAlerts.checkDietaryConflicts(
+            food.dietaryRestrictions || [],
+            profile?.DietaryRestriction || []
+        );
+        
+        // Add alert info to response
+        const response = {
+            ...food,
+            dietaryAlert: conflictCheck.hasConflict ? {
+                hasConflict: true,
+                message: `This food contains ingredients that conflict with your dietary restrictions`,
+                conflicts: conflictCheck.conflictingRestrictions
+            } : {
+                hasConflict: false,
+                isFit: true,
+                message: 'This food fits your dietary profile'
+            }
+        };
+        
+        await prisma.$disconnect();
+        res.status(201).json(response);
     } catch (err) {
         if (err.code === 'P2002') {
             res.status(409).json({ error: 'Food with this unique value already exists' });
