@@ -61,29 +61,6 @@ describe('Groups API', () => {
     });
   });
 
-  describe('GET /groups/user/:profileId', () => {
-    it('should return groups for a specific user', async () => {
-      // Create a group with the user
-      await prisma.group.create({
-        data: {
-          ...createTestGroup(testProfile1.id),
-          members: {
-            create: {
-              profileId: testProfile1.id,
-              role: 'admin'
-            }
-          }
-        }
-      });
-
-      const response = await request(app)
-        .get(`/groups/user/${testProfile1.id}`)
-        .expect(200);
-
-      expect(Array.isArray(response.body)).toBe(true);
-      expect(response.body.length).toBeGreaterThan(0);
-    });
-  });
 
   describe('GET /groups/:id', () => {
     it('should return a specific group by ID', async () => {
@@ -147,34 +124,6 @@ describe('Groups API', () => {
     });
   });
 
-  describe('POST /groups/:id/members', () => {
-    it('should add a member to a group', async () => {
-      const group = await prisma.group.create({
-        data: {
-          ...createTestGroup(testProfile1.id),
-          members: {
-            create: {
-              profileId: testProfile1.id,
-              role: 'admin'
-            }
-          }
-        }
-      });
-
-      const memberData = {
-        profileId: testProfile2.id,
-        requesterId: testProfile1.id
-      };
-
-      const response = await request(app)
-        .post(`/groups/${group.GroupID}/members`)
-        .send(memberData)
-        .expect(201);
-
-      expect(response.body).toHaveProperty('GroupMemberID');
-      expect(response.body.profileId).toBe(testProfile2.id);
-    });
-  });
 
   describe('DELETE /groups/:id/members/:profileId', () => {
     it('should remove a member from a group', async () => {

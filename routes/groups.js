@@ -175,38 +175,6 @@ router.delete('/:id', async (req, res) => {
 });
 
 /**
- * POST /groups/:id/members
- * Add a member to a group (DEPRECATED - use invitations instead)
- */
-router.post('/:id/members', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { profileId, role } = req.body;
-        
-        if (!profileId) {
-            return res.status(400).json({ 
-                error: 'Profile ID is required' 
-            });
-        }
-        
-        const newMember = await groupsLib.addGroupMember(id, profileId, role);
-        
-        res.status(201).json(newMember);
-    } catch (error) {
-        console.error('Error adding group member:', error);
-        
-        if (error.message === 'User is already a member of this group') {
-            return res.status(409).json({ error: error.message });
-        }
-        
-        res.status(500).json({ 
-            error: 'Failed to add group member',
-            details: error.message 
-        });
-    }
-});
-
-/**
  * POST /groups/:id/invite
  * Send invitation to join a group
  */
@@ -498,20 +466,5 @@ router.get('/dashboard/:userId', async (req, res) => {
     }
 });
 
-
-/**
- * GET /groups/user/:profileId
- * Get all groups for a specific user
- */
-router.get('/user/:profileId', async (req, res) => {
-  try {
-    const { profileId } = req.params;
-    const groups = await groupsLib.getUserGroups(profileId);
-    res.status(200).json(groups);
-  } catch (error) {
-    console.error('[groups] Error getting user groups:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 module.exports = router;

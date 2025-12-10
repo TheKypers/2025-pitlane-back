@@ -9,6 +9,8 @@
  * @param {Array} userRestrictions - User's required dietary restrictions
  * @returns {Object} - { hasConflict: boolean, conflictingRestrictions: Array }
  */
+
+
 function checkDietaryConflicts(itemRestrictions, userRestrictions) {
     if (!userRestrictions || userRestrictions.length === 0) {
         return { hasConflict: false, conflictingRestrictions: [] };
@@ -179,12 +181,12 @@ function calculateConsumptionStats(consumptions, referenceDate = new Date()) {
 }
 
 /**
- * Enrich consumption with alerts and semaphore data
  * @param {Object} consumption - Consumption record
  * @param {Array} userRestrictions - User's dietary restrictions
  * @param {number} dailyCalorieGoal - User's daily calorie goal
  * @returns {Object} - Enriched consumption with alerts
  */
+
 function enrichConsumptionWithAlerts(consumption, userRestrictions, dailyCalorieGoal) {
     const enriched = { ...consumption };
     

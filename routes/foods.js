@@ -26,48 +26,6 @@ router.get('/user/:profileId', async (req, res) => {
     }
 });
 
-// GET /foods/by-preference/:preferenceId
-router.get('/by-preference/:preferenceId', async (req, res) => {
-    try {
-        const foods = await foodsController.getFoodsByPreference(req.params.preferenceId);
-        res.json(foods);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// GET /foods/by-restriction/:restrictionId
-router.get('/by-restriction/:restrictionId', async (req, res) => {
-    try {
-        const foods = await foodsController.getFoodsByRestriction(req.params.restrictionId);
-        res.json(foods);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// POST /foods/by-preference-and-restriction
-router.post('/by-preference-and-restriction', async (req, res) => {
-    try {
-        const { preferenceId, restrictionId } = req.body;
-        const foods = await foodsController.getFoodsByPreferenceAndRestriction(preferenceId, restrictionId);
-        res.json(foods);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// GET /foods/recommended/:profileId
-router.get('/recommended/:profileId', async (req, res) => {
-    try {
-        const foods = await foodsController.getRecommendedFoodsForProfile(req.params.profileId);
-        if (foods === null) return res.status(404).json({ error: 'Profile not found' });
-        res.json(foods);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
 module.exports = router;
 
 // DELETE /foods/:id - delete a food by id

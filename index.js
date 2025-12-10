@@ -139,12 +139,10 @@ if (process.env.VERCEL) {
   console.log('✅ Voting session scheduler started');
 }
 
-// Export app for Vercel serverless functions
 module.exports = app;
 
-// Also export as default for ES6 compatibility
+
 module.exports.default = app;
 
-// Export app and server for testing
 module.exports.app = app;
 module.exports.httpServer = httpServer;

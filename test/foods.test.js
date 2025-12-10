@@ -53,13 +53,6 @@ describe('Foods API', () => {
   //   await request(app).delete('/foods/name/UniqueFood');
   // });
 
-  it('POST /foods/by-preference-and-restriction with body should return an array', async () => {
-    const res = await request(app)
-      .post('/foods/by-preference-and-restriction')
-      .send({ preferenceId: 1, restrictionId: 1 });
-    expect(res.statusCode).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-  });
 
   it('GET /foods/recommended/1 should return an array or 404', async () => {
     // Create a profile to ensure userId 1 exists for testing

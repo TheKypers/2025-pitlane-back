@@ -71,20 +71,6 @@ async function getFoodById(id) {
     });
 }
 
-async function getFoodsByPreference(preferenceId) {
-    return prisma.food.findMany({
-        where: { preferences: { some: { PreferenceID: parseInt(preferenceId) } } },
-        include: { dietaryRestrictions: true, preferences: true, profile: true }
-    });
-}
-
-async function getFoodsByRestriction(restrictionId) {
-    return prisma.food.findMany({
-        where: { dietaryRestrictions: { some: { DietaryRestrictionID: parseInt(restrictionId) } } },
-        include: { dietaryRestrictions: true, preferences: true, profile: true }
-    });
-}
-
 async function getFoodsByProfileId(profileId) {
     return prisma.food.findMany({
         where: { profileId: profileId },
@@ -92,102 +78,11 @@ async function getFoodsByProfileId(profileId) {
     });
 }
 
-async function getFoodsByPreferenceAndRestriction(preferenceId, restrictionId) {
-    // If both params are present, return intersection, else fallback to one
-    if (preferenceId && restrictionId) {
-        const foodsByPref = await getFoodsByPreference(preferenceId);
-        const foodsByRestr = await getFoodsByRestriction(restrictionId);
-        // Intersection by FoodID
-        const idsByRestr = new Set(foodsByRestr.map(f => f.FoodID));
-        return foodsByPref.filter(f => idsByRestr.has(f.FoodID));
-    } else if (preferenceId) {
-        return getFoodsByPreference(preferenceId);
-    } else if (restrictionId) {
-        return getFoodsByRestriction(restrictionId);
-    } else {
-        return getAllFoods();
-    }
-}
-
-async function getRecommendedFoodsForProfile(profileId) {
-    const profile = await prisma.profile.findUnique({
-        where: { id: profileId },
-        include: { Preference: true, DietaryRestriction: true }
-    });
-    if (!profile) return null;
-
-    const userRestrictions = profile.DietaryRestriction.map(r => r.DietaryRestrictionID);
-
-    // Base query to match user preferences
-    const baseQuery = {
-        where: {
-            AND: [
-                // Match user preferences
-                {
-                    preferences: {
-                        some: {
-                            PreferenceID: {
-                                in: profile.Preference.map(p => p.PreferenceID)
-                            }
-                        }
-                    }
-                }
-            ]
-        },
-        include: { dietaryRestrictions: true, preferences: true, profile: true }
-    };
-
-    // If user has no dietary restrictions, they can eat any food with their preferences
-    if (userRestrictions.length === 0) {
-        return prisma.food.findMany(baseQuery);
-    }
-
-    // If user has restrictions, add dietary restriction filtering
-    baseQuery.where.AND.push({
-        OR: [
-            // Foods with no dietary restrictions (available to everyone)
-            {
-                dietaryRestrictions: {
-                    none: {}
-                }
-            },
-            // Foods with "For Everyone" restriction (if it exists)
-            {
-                dietaryRestrictions: {
-                    some: {
-                        OR: [
-                            { DietaryRestrictionID: 0 },
-                            { name: { contains: "For Everyone", mode: 'insensitive' } },
-                            { name: { contains: "everyone", mode: 'insensitive' } }
-                        ]
-                    }
-                }
-            },
-            // Foods that match user's dietary restrictions
-            {
-                dietaryRestrictions: {
-                    some: {
-                        DietaryRestrictionID: {
-                            in: userRestrictions
-                        }
-                    }
-                }
-            }
-        ]
-    });
-
-    return prisma.food.findMany(baseQuery);
-}
-
 module.exports = {
     getAllFoods,
     getFoodsForUser,
     getFoodById,
-    getFoodsByPreference,
-    getFoodsByRestriction,
-    getFoodsByPreferenceAndRestriction,
     getFoodsByProfileId,
-    getRecommendedFoodsForProfile,
     createFood,
     deleteFood,
     updateFood
