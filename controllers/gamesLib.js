@@ -473,8 +473,10 @@ async function submitClickCount(gameSessionId, profileId, clickCount) {
     const allSubmitted = allParticipants.every(p => p.hasSubmitted);
     console.log(`[gamesLib] Submission check - ${allParticipants.filter(p => p.hasSubmitted).length}/${allParticipants.length} submitted`);
 
-    if (allSubmitted) {
-      console.log('[gamesLib] All participants submitted! Completing game...');
+    // Only auto-complete for egg_clicker games
+    // For roulette games, the host must manually spin to complete
+    if (allSubmitted && gameSession.gameType === 'egg_clicker') {
+      console.log('[gamesLib] All participants submitted! Completing egg_clicker game...');
       // Determine winner
       const winner = allParticipants.reduce((max, p) => 
         p.clickCount > max.clickCount ? p : max
